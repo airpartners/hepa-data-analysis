@@ -1,3 +1,16 @@
+# Python/IPython files
+__pycache__/
+**/.env
+**/__pycache__/**
+**/raw_data/**
+env
+
+# Pickle files containing data
+hepa-pckls/**
+
+# QuantAQ API key
+token.txt
+
 # History files
 .Rhistory
 .Rapp.history
