@@ -252,6 +252,7 @@ class DataHandler:
         folders = f"hepa-pckls/{sensor}"
         Path(folders).mkdir(parents=True, exist_ok=True)
         with open(os.path.join(folders, f"{self.get_save_name(smoothed=smoothed)}.pckl"), 'wb') as f:
+            print(f)
             pickle.dump(df, f)
 
     def load_df(self, sensor, start=None, end=None, smoothed=True):
@@ -440,13 +441,13 @@ class ModPMHandler(DataHandler):
             #drop columns that contain dictionaries after flattening
             df = df.drop(['neph', 'opc', 'met'], axis=1)
 
-            # Remove all bin columns from dataframe. 
-            df = df[df.columns.drop(list(df.filter(regex='bin')))]
+            # # Remove all bin columns from dataframe. 
+            # df = df[df.columns.drop(list(df.filter(regex='bin')))]
 
             # Remove other unused columns from dataframe
             df = df.drop(['timestamp_local', 'url', 'opc_rh', 'opc_temp', 'pressure'], axis = 1)
         else:
-            df[['rh', 'temp']] = df.met.apply(pd.Series)
+            #df[['rh', 'temp']] = df.met.apply(pd.Series)
             df = df.drop(['url', 'met', 'timestamp_local'], axis = 1)
 
         #drop duplicate rows. Timestamps don't properly get recognized as duplicates, so use data_cols.
@@ -490,7 +491,7 @@ class ModPMHandler(DataHandler):
         :returns: cleaned pandas dataframe
         """
         client = QuantAQHandler(TOKEN_PATH) #TODO make this not rely on a global variable token_path?
-        df = client.request_data(sensor_id, self.start, self.end, raw=False)
+        df = client.request_data(sensor_id, self.start, self.end, raw=True)
         
         # check for empty dataframe
         if df.empty:
@@ -499,7 +500,7 @@ class ModPMHandler(DataHandler):
         print('Downloaded from API')
         #print(df.dtypes)
         # flatten and clean the dataframe
-        df = self._clean_mod_pm(df, smoothed=smoothed, raw=False)
+        df = self._clean_mod_pm(df, smoothed=smoothed, raw=True)
 
         #add wind direction and speed to df from iem
         df = self._iem(df)

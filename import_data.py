@@ -5,13 +5,10 @@ Project: Air Partners
 Script for importing necessary data for air quality analysis for static reporting.
 """
 
-from email.errors import HeaderParseError
-import sys
+import json
 import pandas as pd
 from numpy import nan
-from calendar import monthrange
 import quantaq
-from quantaq.utils import to_dataframe
 from datetime import datetime
 import data_analysis.quantaq_pipeline as qp
 
@@ -66,6 +63,12 @@ class DataImporter(object):
                 df = self._data_month(start, end, sn)
                 # Define items of this key as the sensor location (outdoors or indoors) and data
                 sensor_dict[sn][date_tuple] = self.deployments['Location'].iloc[index], df
+        
+        # Create json of dictionary and save it as json file
+        sensor_json = json.dumps(sensor_dict, indent=4)
+        with open("sensors.json", "w") as outfile:
+            outfile.write(sensor_json)
+
         return sensor_dict
 
 
@@ -77,9 +80,13 @@ class DataImporter(object):
         :param sensor_sn: (str) The serial number of the sensor to pull data for
         :returns: A pandas dataframe containing all of the sensor data for the month
         """
-        # convert start and end times to datetime objects
-        start_date = self._str_to_datetime(start_date)
-        end_date = self._str_to_datetime(end_date)
+        try:
+            # convert start and end times to datetime objects
+            start_date = self._str_to_datetime(start_date)
+            end_date = self._str_to_datetime(end_date)
+        except:
+            print(f"Deployment dates missing for {sensor_sn}.")
+            return pd.DataFrame()
         
         # instantiate handler used to download data
         mod_handler = qp.ModPMHandler(start_date=start_date, end_date=end_date)
@@ -90,12 +97,8 @@ class DataImporter(object):
             print("\r Data pulled from Pickle file", flush=True)
         # Otherwise download it from API
         except:
-            try:
-                # Pull dataframe from API, will return the dataframe and will also pickle the results for you to open and use later
-                df = mod_handler.from_api(sensor_sn)
-            except:
-                # If there is a request protocol error, create empty dataframe (temp solution)
-                df = pd.DataFrame()
+            # Pull dataframe from API, will return the dataframe and will also pickle the results for you to open and use later
+            df = mod_handler.from_api(sensor_sn)
         return df
 
 
@@ -112,7 +115,8 @@ class DataImporter(object):
                     format = '%m/%d/%Y'
                     date = datetime.strptime(date, format)
                 except:
-                    date = datetime.today()
+                    # no date provided
+                    raise Exception("Parameter date is empty")
         return date
 
 
