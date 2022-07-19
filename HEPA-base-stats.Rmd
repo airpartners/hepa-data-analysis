@@ -1,0 +1,59 @@
+
+```{r setup}
+library(tidyverse)
+library(broom)
+library(reticulate)
+py_install("pandas")
+source_python("read_pickle.py")
+
+```
+
+
+```{r}
+
+df_sensor_sn <- read_pickle_file("./hepa-pckls/2022_2_17_2022_3_3_smoothed.pckl")
+
+
+```
+
+```{r}
+# Select relevant columns
+df_sensor_sn <-
+  df_sensor_sn %>%
+  subset(select = c("pm1", "pm10", "pm25", "timestamp"))
+
+# summary(df_sensor_sn)
+
+w <-
+  df_sensor_sn %>%  
+  summarize(across(everything(),
+                   list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                        twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                        seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                        nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                        mean = ~ mean(.x, na.rm = TRUE),
+                        median = ~ median(.x, na.rm = TRUE)
+                        )
+                   )
+            ) %>%
+  select(starts_with("pm")) %>%
+  pivot_longer(
+    names_to = c("size", ".value"),
+    names_sep = "_",
+    cols = everything()
+  )
+
+w
+  
+
+
+```
+
+```{r}
+df_sensor_sn %>%
+  ggplot(aes(timestamp, pm1)) +
+  geom_line(aes(color = pm1)) + 
+  scale_color_gradientn(colors=rainbow(3, rev = TRUE))
+
+
+```
