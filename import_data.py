@@ -41,36 +41,36 @@ class DataImporter(object):
         return devices
 
 
-    def create_dict(self, device_list):
-        """
-        Creates dictionary of each sensor including data.
-        """
-        # Creates empty dictionary
-        sensor_dict = {}
-        # Create a dictionary for each sensor in the sensor dictionary
-        for sn in device_list:
-            sensor_dict[sn] = {}
-        # Go through CSV dataframe; anytime there is an instance of 
-        for index in range(len(self.deployments)):
-            sn = self.deployments['Sensors'].iloc[index]
-            # If sensor of this CSV row is in the device list:
-            if sn in device_list:
-                # Define key of inner dictionary with start and end dates
-                start = self.deployments['Approximate time and day'].iloc[index]
-                end = self.deployments['End of data acquisition'].iloc[index]
-                date_tuple = (start, end)
-                # Get data for sensor for this time period
-                print(f'Downloading data for {sn}')
-                df = self._data_month(start, end, sn)
-                # Define items of this key as the sensor location (outdoors or indoors) and data
-                sensor_dict[sn][date_tuple] = self.deployments['Location'].iloc[index], df
+    # def create_dict(self, device_list):
+    #     """
+    #     Creates dictionary of each sensor including data.
+    #     """
+    #     # Creates empty dictionary
+    #     sensor_dict = {}
+    #     # Create a dictionary for each sensor in the sensor dictionary
+    #     for sn in device_list:
+    #         sensor_dict[sn] = {}
+    #     # Go through CSV dataframe; anytime there is an instance of 
+    #     for index in range(len(self.deployments)):
+    #         sn = self.deployments['Sensors'].iloc[index]
+    #         # If sensor of this CSV row is in the device list:
+    #         if sn in device_list:
+    #             # Define key of inner dictionary with start and end dates
+    #             start = self.deployments['Approximate time and day'].iloc[index]
+    #             end = self.deployments['End of data acquisition'].iloc[index]
+    #             date_tuple = (start, end)
+    #             # Get data for sensor for this time period
+    #             print(f'Downloading data for {sn}')
+    #             df = self._data_month(start, end, sn)
+    #             # Define items of this key as the sensor location (outdoors or indoors) and data
+    #             sensor_dict[sn][date_tuple] = self.deployments['Location'].iloc[index], df
         
-        # Create json of dictionary and save it as json file
-        sensor_json = json.dumps(sensor_dict, indent=4)
-        with open("sensors.json", "w") as outfile:
-            outfile.write(sensor_json)
+    #     # Create json of dictionary and save it as json file
+    #     sensor_json = json.dumps(sensor_dict, indent=4)
+    #     with open("sensors.json", "w") as outfile:
+    #         outfile.write(sensor_json)
 
-        return sensor_dict
+    #     return sensor_dict
 
 
     def get_data_in_timeframe(self, start_date, end_date, sensor_sn):
@@ -83,8 +83,8 @@ class DataImporter(object):
         """
         try:
             # convert start and end times to datetime objects
-            start_date = self._str_to_datetime(start_date)
-            end_date = self._str_to_datetime(end_date)
+            start_date = pd.to_datetime(start_date).date()
+            end_date = pd.to_datetime(end_date).date()
         except:
             print(f"Deployment dates missing for {sensor_sn}.")
             return pd.DataFrame()
@@ -101,10 +101,6 @@ class DataImporter(object):
             # Pull dataframe from API, will return the dataframe and will also pickle the results for you to open and use later
             df = mod_handler.from_api(sensor_sn)
         return df
-
-
-    def _str_to_datetime(self, date):
-        return pd.to_datetime(date).date()
 
 
 #    def get_PM_data(self):
@@ -137,7 +133,7 @@ class DataImporter(object):
 if __name__ == '__main__':
   
   # Convert csv to usable dataframes
-  deploy = pd.read_csv("hepa-pckls/MOF-Curated-Deployments.csv")
+  deploy = pd.read_csv("hepa-pckls/MOF-Curated-Deployments-test.csv")
   
   locations = {}
   d = {"sensor_sn" : [], "location" : [], "sensor_install" : [],
@@ -178,7 +174,7 @@ if __name__ == '__main__':
   final = {}
   
   for address in locations:
-    final[address] = {}
+    final[address] = []
     df = locations[address]
     
     # Pull outdoor sensor data
@@ -187,6 +183,9 @@ if __name__ == '__main__':
     for row in df_out.itertuples():
       df_out_data = di.get_data_in_timeframe(row.sensor_install, row.sensor_removal, row.sensor_sn)
       df_out_data = df_out_data.add_prefix("outdoor_")
+      df_out_data["timestamp"] = df_out_data["outdoor_timestamp"]
+      # Remove unnecessary columns
+      df_out_data.drop(["outdoor_timestamp", "outdoor_flag"], axis = 1)
     
     # Look at indoor sensor data
     df_in = df[df.location == "Indoors"]
@@ -195,16 +194,14 @@ if __name__ == '__main__':
       filter_date = row.hepa_install
       df_in_data = di.get_data_in_timeframe(row.sensor_install, row.sensor_removal, row.sensor_sn)
       df_in_data = df_in_data.add_prefix("indoor_")
+      df_in_data["timestamp"] = df_in_data["indoor_timestamp"]
+      # Remove unnecessary columns
+      df_in_data.drop(["indoor_timestamp", "indoor_flag", "indoor_wind_dir", "indoor_wind_speed"], axis = 1)
+      # Add column for when HEPA purifier is installed
+      df_in_data["HEPA Installed"] = df_in_data["timestamp"] >= pd.to_datetime(filter_date)
       # Combine outdoor and indoor data into pairs
-      result = pd.concat([df_out_data, df_in_data], ignore_index=True, axis=1)
-      
-    
-      
-        
-        
-        
-    
-  
-  
-  
-  
+
+      result = pd.merge_asof(df_out_data, df_in_data, on="timestamp")
+      final[address].append(result)
+  # TODO: Do something with this dictionary
+  #print(final)
