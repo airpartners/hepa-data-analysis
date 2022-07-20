@@ -77,6 +77,13 @@ peaks <- findpeaks(in_out,
 print(peaks)
 
 # Plot the peaks on top of current time series
+plot(in_out,
+  type = "l",
+  main = "Indoor/Outdoor Ratio",
+  xlab = "Time (indices)",
+  ylab = "Ratio of indoor/outdoor concentrations",
+  col = "navy")
+  grid()
 points(peaks[, 2], peaks[, 1], pch = 20, col = "maroon")
 ```
 
