@@ -1,0 +1,32 @@
+```{r setup}
+library(tidyverse)
+library(reticulate)
+# Python functions
+py_install("pandas")
+source_python("read_pickle.py")
+```
+
+```{r}
+df_sensor_sn <- read_pickle_file(
+    "hepa-pckls/indoor-outdoor-pairs/302 Lexington Street /MOD-PM-00128.pckl"
+)
+```
+
+```{r}
+# Go through every column of the dataframe
+for (colname in names(df_sensor_sn)) {
+    if (grepl("indoor_", colname, fixed = TRUE)) {
+        datatype <- substring(colname, 8, nchar(colname))
+        # Get indoor and outdoor columns that includes same datatype
+        indoor <- df_sensor_sn[paste0("indoor_", datatype)]
+        outdoor <- df_sensor_sn[paste0("outdoor_", datatype)]
+        # If indoor and outdoor columns are both of type double, create ratio col
+        if (sapply(indoor, class) == "numeric") {
+            ratio_name <- paste0("ratio_", datatype)
+            df_sensor_sn[ratio_name] <- indoor / outdoor
+            print("Success!")
+        }
+    }
+}
+df_sensor_sn["ratio_opc_bin0"]
+```
