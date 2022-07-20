@@ -178,7 +178,7 @@ if __name__ == '__main__':
   final = {}
   
   for address in locations:
-    final[address] = {}
+    final[address] = []
     df = locations[address]
     
     # Pull outdoor sensor data
