@@ -3,7 +3,8 @@
 library(tidyverse)
 library(broom)
 library(reticulate)
-py_install("pandas")
+#library(gsubfn)
+# py_install("pandas")
 source_python("read_pickle.py")
 
 ```
@@ -11,7 +12,7 @@ source_python("read_pickle.py")
 
 ```{r}
 
-df_sensor_sn <- read_pickle_file("./hepa-pckls/2022_2_17_2022_3_3_smoothed.pckl")
+df_sensor_sn <- read_pickle_file("./hepa-pckls/indoor-outdoor-pairs/48 Putnam Street #1/MOD-PM-00130.pckl")
 
 
 ```
@@ -57,3 +58,41 @@ df_sensor_sn %>%
 
 
 ```
+
+
+```{r}
+# df_sensor_sn %>% glimpse
+
+# df_sensor_sn %>% summary
+
+df_sensor_sn
+```
+
+```{r}
+#df_sensor_sn %>%
+#  ggplot(aes(timestamp, indoor_opc_bin0)) + 
+#  geom_line(color = "blue") + 
+#  geom_line(aes(y = outdoor_opc_bin0, color = "green"))
+
+
+df_temp <- df_sensor_sn[, grepl("outdoor_", names(df_sensor_sn))]
+
+bin <- sub("^outdoor_(.*)", "\\1", names(df_temp))
+
+bin
+
+#df1 <- df_sensor_sn["", grepl("", names(df_sensor_sn))]
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

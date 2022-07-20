@@ -191,7 +191,8 @@ if __name__ == '__main__':
       df_out_data = df_out_data.add_prefix("outdoor_")
       df_out_data["timestamp"] = df_out_data["outdoor_timestamp"]
       # Remove unnecessary columns
-      df_out_data.drop(["outdoor_timestamp", "outdoor_flag"], axis = 1)
+      df_out_data = df_out_data.drop(["outdoor_timestamp", 
+                                      "outdoor_flag"], axis = 1)
     
     # Look at indoor sensor data
     df_in = df[df.location == "Indoors"]
@@ -202,15 +203,14 @@ if __name__ == '__main__':
       df_in_data = df_in_data.add_prefix("indoor_")
       df_in_data["timestamp"] = df_in_data["indoor_timestamp"]
       # Remove unnecessary columns
-      df_in_data.drop(["indoor_timestamp",
-                       "indoor_flag",
-                       "indoor_wind_dir",
-                       "indoor_wind_speed",
-                       "indoor_geo"], axis = 1)
+      df_in_data = df_in_data.drop(["indoor_timestamp",
+                                    "indoor_flag",
+                                    "indoor_wind_dir",
+                                    "indoor_wind_speed",
+                                    "indoor_geo"], axis = 1)
       # Add column for when HEPA purifier is installed
       df_in_data["HEPA Installed"] = df_in_data["timestamp"] >= pd.to_datetime(filter_date)
       # Combine outdoor and indoor data into pairs
       result = pd.merge_asof(df_out_data, df_in_data, on="timestamp")
       # Create Pickle files for each indoor/outdoor pair
-      sn_id = result["indoor_sn"].iloc[0]
-      result.to_pickle(f"hepa-pckls/indoor-outdoor-pairs/{address}/{sn_id}.pckl")
+      result.to_pickle(f"hepa-pckls/indoor-outdoor-pairs/{address}/{row.sensor_sn}.pckl")
