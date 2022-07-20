@@ -54,7 +54,7 @@ get_first_valleys <- function(data, peaks, min_threshold) {
         # otherwise, get slope (approximately)
         # NOTE: difference between idx and (idx+1) is 1
         slope <- data[idx + 1] - data[idx]
-        if (data[idx] <= min_threshold && slope >= 0) {
+        if (data[idx] <= min_threshold && slope > 0) {
           n <- FALSE
         } else {
           idx <- idx + 1
@@ -70,8 +70,10 @@ get_first_valleys <- function(data, peaks, min_threshold) {
 
 # Exponential curve fitting for air quality data; returns dataframe containing
 # k-values of curves
-curve_fitting <- function(data, peak_mat, valley_mat) {
-  # Create empty DataFrame for storing k values
+# TODO: nls function returns various weird errors, diagnose why these errors appear
+# e.g. "number of iterations", "singular gradient", "NaNs, Inf, etc.", etc.
+curve_fitting <- function(data, peaks, valleys) {
+    # Create empty DataFrame for storing k values
   alphas.data <- data.frame(
     "peak_idx" = numeric(0),
     "valley_idx" = numeric(0),
@@ -79,13 +81,18 @@ curve_fitting <- function(data, peak_mat, valley_mat) {
     "conv_tol" = numeric(0)
   )
   # Define parameters for curve fitting function for each row
-  for (row in 1:nrow(peak_mat)) {
-    t <- peak_mat[row, 2]:valley_mat[row, 2]
-    sect <- data[t]
+  for (row in 1:nrow(peaks)) {
+    row <- as.double(row)
+    i_range <- peaks[row, 2]:valleys[row, 2]
+    sect <- data[i_range]
+    t <- i_range - peaks[row, 2] + 1
     df <- data.frame(t = t, y = sect)
     # Get exponential fit
-    nlc <- nls.control(maxiter = 500)
-    fit <- nls(y ~ SSasymp(t, yf, y0, log_alpha), data = df, control = nlc)
+    nlc <- nls.control(maxiter = 1000)
+    fit <- try(nls(y ~ SSasymp(t, yf, y0, log_alpha), data = df, control = nlc))
+    if (class(fit) != "nls") {
+      next
+    }
     # Get parameters of the fit
     params <- coef(fit)
     # Extract the log_alpha value and put it in form e^(log(a)) to get a
@@ -97,8 +104,8 @@ curve_fitting <- function(data, peak_mat, valley_mat) {
     conv <- fit$convInfo$finTol
     # Add alpha to dataframe
     alphas.newdata <- data.frame(
-      "peak_idx" = c(peak_mat[row, 2]),
-      "valley_idx" = c(valley_mat[row, 2]),
+      "peak_idx" = c(peaks[row, 2]),
+      "valley_idx" = c(valleys[row, 2]),
       "k_val" = c(alpha),
       "conv_tol" = c(conv)
     )
@@ -118,8 +125,8 @@ alphas <- curve_fitting(p_signal, peaks, valleys)
 print(alphas)
 
 plot(p_signal, type = "l",
-  main = "PM levels over time",
-  xlab = "Time",
+  main = "Testing Code",
+  xlab = "If you see this graph, curve fitting works.",
   ylab = "PM concentrations (ug/m^3)",
   col = "navy")
   grid()

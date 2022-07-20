@@ -1,0 +1,101 @@
+# An Algorithm to Detect Decay Constants
+
+This is a demo pipeline that takes a time series of indoor/outdoor data, and
+calculate the exponential decay constant of a pollutant after a plume.
+
+When a source releases pollutants into the air and finishes, the
+concentration of pollution naturally decays over time. These decay
+functions are exponential in nature and can be fitted to the following model:
+
+    A = yf + (y0 - yf)e^(-kt)
+
+Where t is time, y0 is the initial value of the decay, yf is the asymptotic
+value of the decay, A is the concentration of PM at time t, and k is the
+decay constant.
+
+To test the efficacy of HEPA air purifiers, looking at the decay constants of
+these curves before and after a purifier is installed can be important. A
+purifier that proves to increase the decay constant, i.e. cause the pollutants
+in the air to diffuse out of a space at a faster rate, can be argued to be
+effective.
+
+```{r setup}
+library(tidyverse)
+library(reticulate)
+library(pracma)
+source("scripts/curve_fitting.R")
+# Python functions
+py_install("pandas")
+source_python("read_pickle.py")
+```
+
+Firstly, we will download a random data file for analysis containing indoor and
+outdoor air quality data.
+
+```{r}
+# Download a file for analysis
+df_sensor_sn <- read_pickle_file(
+    "hepa-pckls/indoor-outdoor-pairs/302 Lexington Street /MOD-PM-00128.pckl"
+)
+```
+
+Since this data does not include an indoor/outdoor ratio metric, first that has
+to be created. For visual purposes, this code block plots that data as a time
+series.
+
+```{r}
+# Get indoor/outdoor ratio and add that to dataframe
+df_sensor_sn$indoor_opc_pm25 <- as.numeric(df_sensor_sn$indoor_opc_pm25)
+df_sensor_sn$outdoor_opc_pm25 <- as.numeric(df_sensor_sn$outdoor_opc_pm25)
+df_sensor_sn$in_out_opc_pm25 <-
+    df_sensor_sn$indoor_opc_pm25 / df_sensor_sn$outdoor_opc_pm25
+
+# Create separate variable for this time series for ease of use
+in_out <- df_sensor_sn$in_out_opc_pm25
+
+# Plot the time series
+plot(df_sensor_sn$timestamp, in_out,
+  type = "l",
+  main = "Indoor/Outdoor Ratio",
+  xlab = "Time",
+  ylab = "Ratio of indoor/outdoor concentrations",
+  col = "navy")
+  grid()
+```
+
+Next, we must get the peaks and valleys of the data set.
+
+```{r}
+# Get peaks of dataset
+in_out[is.na(in_out)] <- 0
+peaks <- findpeaks(in_out,
+                   nups = 1,
+                   ndowns = 1,
+                   minpeakheight = 10,
+                   minpeakdistance = 200,
+                   threshold = 0)
+print(peaks)
+
+# Plot the peaks on top of current time series
+points(peaks[, 2], peaks[, 1], pch = 20, col = "maroon")
+```
+
+```{r}
+# Get nearest valleys to those peaks
+valleys <- get_first_valleys(in_out, peaks, 2)
+print(valleys)
+
+# Plot valleys on top of current time series
+points(valleys[, 2], valleys[, 1], pch = 20, col = "green")
+```
+
+With these peaks and valleys, we now know the edges of our exponential decay
+curves. We can then isolate that data and caculate a fit function, or a
+"best fit line". The decay constant from that formula can be used for learning
+more about the efficacy of the HEPA purifier used here.
+
+```{r}
+# Get the decay values between each peak and valley highlighted
+decays <- curve_fitting(in_out, peaks, valleys)
+decays
+```

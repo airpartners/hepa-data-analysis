@@ -211,6 +211,7 @@ if __name__ == '__main__':
       df_in_data["HEPA Installed"] = df_in_data["timestamp"] >= pd.to_datetime(filter_date)
       # Combine outdoor and indoor data into pairs
       result = pd.merge_asof(df_out_data, df_in_data, on="timestamp")
+      print(result.columns)
       # Create Pickle files for each indoor/outdoor pair
       sn_id = result["indoor_sn"].iloc[0]
       result.to_pickle(f"hepa-pckls/indoor-outdoor-pairs/{address}/{sn_id}.pckl")
