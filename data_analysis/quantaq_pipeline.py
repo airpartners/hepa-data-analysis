@@ -249,7 +249,7 @@ class DataHandler:
         :returns: None
         """
         #create the save path, including missing folders, if it doesn't exist yet
-        folders = f"hepa-pckls/{sensor}"
+        folders = f"hepa-pckls/single-sensors/{sensor}"
         Path(folders).mkdir(parents=True, exist_ok=True)
         with open(os.path.join(folders, f"{self.get_save_name(smoothed=smoothed)}.pckl"), 'wb') as f:
             print(f)
@@ -264,7 +264,7 @@ class DataHandler:
         :param smoothed: (optional bool) True if loading a smoothed dataframe
         :returns: loaded dataframe
         """
-        folders = f"hepa-pckls/{sensor}"
+        folders = f"hepa-pckls/single-sensors/{sensor}"
         save_name = self.get_save_name(smoothed=smoothed, start=start, end=end)
         with open(os.path.join(folders, f"{save_name}.pckl"), 'rb') as f:
             return pickle.load(f)
