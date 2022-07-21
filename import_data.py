@@ -207,9 +207,10 @@ if __name__ == '__main__':
                                     "indoor_flag",
                                     "indoor_wind_dir",
                                     "indoor_wind_speed",
+                                    "indoor_sn",
                                     "indoor_geo"], axis = 1)
       # Add column for when HEPA purifier is installed
-      df_in_data["HEPA Installed"] = df_in_data["timestamp"] >= pd.to_datetime(filter_date)
+      df_in_data["hepa_installed"] = df_in_data["timestamp"] >= pd.to_datetime(filter_date)
       # Combine outdoor and indoor data into pairs
       result = pd.merge_asof(df_out_data, df_in_data, on="timestamp")
       print(result.columns)
