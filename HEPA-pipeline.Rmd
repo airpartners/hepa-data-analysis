@@ -1,0 +1,164 @@
+
+```{r setup}
+library(ggplot2)
+library(tidyverse)
+library(broom)
+library(reticulate)
+library(pracma)
+library(cowplot)
+source("scripts/curve_fitting.R")
+# py_install("pandas")
+source_python("read_pickle.py")
+
+```
+
+
+```{r}
+# Download a file for analysis
+df_sensor_sn <- read_pickle_file(
+    "hepa-pckls/indoor-outdoor-pairs/302 Lexington Street /MOD-PM-00112.pckl"
+)
+```
+
+
+```{r}
+df_sensor_sn %>%
+  ggplot(aes(timestamp, indoor_opc_bin0)) +
+  geom_line(color = "blue") +
+  geom_line(aes(y = outdoor_opc_bin0, color = "green"))
+```
+
+
+```{r}
+# Add Indoor / Outdoor ratio columns to the dataframe
+
+# Create a list of datatypes
+bin <- na.omit(str_match(names(df_sensor_sn), "^indoor_(.*)")[,2])
+
+# Create list of cols from og data
+indoor <- df_sensor_sn[paste0("indoor_", bin)]
+outdoor <- df_sensor_sn[paste0("outdoor_", bin)]
+
+#create new col names
+ratio_name <- paste0("ratio_", bin)
+
+# Calculate new cols and add to dataframe
+df_sensor_sn[ratio_name] <- indoor / outdoor
+```
+
+
+```{r}
+# Find statistics for before and after
+
+summary <-
+  df_sensor_sn %>%
+    group_by(hepa_installed) %>%
+    summarize(across(starts_with("ratio"),
+                    list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                          twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                          seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                          nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                          mean = ~ mean(.x, na.rm = TRUE),
+                          median = ~ median(.x, na.rm = TRUE)
+                          )
+                    )
+              ) %>%
+    pivot_longer(
+      names_to = c(NA, "bin1", "bin2", ".value"),
+      names_sep = "_",
+      cols = -c(hepa_installed)
+    )
+```
+
+```{r}
+## Plotting the time series for PM1
+
+# Get date of HEPA installation
+installed_dates <-
+  df_sensor_sn[!(df_sensor_sn$hepa_installed), ]
+uninstalled_dates <-
+  df_sensor_sn[df_sensor_sn$hepa_installed, ]
+
+# Create time series
+source("scripts/air_time_series.R")
+air_time_series(df_sensor_sn, "opc_pm1",
+                logical_array = "hepa_installed",
+                summary = summary,
+                start_dates = installed_dates,
+                end_dates = uninstalled_dates)
+```
+
+```{r}
+## Plotting the time series for PM2.5
+
+# Create time series plot
+air_time_series(df_sensor_sn, "opc_pm25",
+                logical_array = "hepa_installed",
+                summary = summary,
+                start_dates = installed_dates,
+                end_dates = uninstalled_dates)
+```
+
+```{r}
+## Plotting the time series for PM10
+
+# Create time series plot
+air_time_series(df_sensor_sn, "opc_pm10",
+                logical_array = "hepa_installed",
+                summary = summary,
+                start_dates = installed_dates,
+                end_dates = uninstalled_dates)
+```
+
+
+```{r}
+
+# Create separate variable for this time series for ease of use
+in_out <- df_sensor_sn$ratio_opc_pm25
+
+# Plot the time series
+plot(df_sensor_sn$timestamp, in_out,
+  type = "l",
+  main = "Indoor/Outdoor Ratio",
+  xlab = "Time",
+  ylab = "Ratio of indoor/outdoor concentrations",
+  col = "navy")
+  grid()
+```
+
+```{r}
+# Get peaks of dataset
+in_out[is.na(in_out)] <- 0
+peaks <- findpeaks(in_out,
+                   nups = 1,
+                   ndowns = 1,
+                   minpeakheight = 10,
+                   minpeakdistance = 200,
+                   threshold = 0)
+print(peaks)
+
+# Plot the peaks on top of current time series
+plot(in_out,
+  type = "l",
+  main = "Indoor/Outdoor Ratio",
+  xlab = "Time (indices)",
+  ylab = "Ratio of indoor/outdoor concentrations",
+  col = "navy")
+  grid()
+points(peaks[, 2], peaks[, 1], pch = 20, col = "maroon")
+```
+
+```{r}
+# Get nearest valleys to those peaks
+valleys <- get_first_valleys(in_out, peaks, 2)
+print(valleys)
+
+# Plot valleys on top of current time series
+points(valleys[, 2], valleys[, 1], pch = 20, col = "green")
+```
+
+```{r}
+# Get the decay values between each peak and valley highlighted
+decays <- curve_fitting(in_out, peaks, valleys)
+decays
+```
