@@ -3,36 +3,37 @@
 library(tidyverse)
 library(broom)
 library(reticulate)
-#library(gsubfn)
-# py_install("pandas")
+library(lubridate)
 source_python("read_pickle.py")
 
 ```
 
 
 ```{r}
-
+# Pull data from pickle file
 df_sensor_sn <- read_pickle_file("./hepa-pckls/indoor-outdoor-pairs/48 Putnam Street #1/MOD-PM-00130.pckl")
-
-
 ```
 
 
 ```{r}
-df_sensor_sn %>%
-  ggplot(aes(timestamp, indoor_opc_bin0)) + 
-  geom_line(color = "blue") + 
-  geom_line(aes(y = outdoor_opc_bin0, color = "green"))
+# Convert all zeros in outdoor data to NA to prevent divide by zero errors
+bin <- na.omit(str_match(names(df_sensor_sn), "^outdoor_([neph|opc].*)")[,1])
+df_sensor_sn[, bin][df_sensor_sn[, bin] == 0] <- NA
+
+# Add columns for sub 1nm particle count
+df_sensor_sn["outdoor_particle_sum"] <- df_sensor_sn["outdoor_opc_bin0"] + df_sensor_sn["outdoor_opc_bin1"] + df_sensor_sn["outdoor_opc_bin2"]
+df_sensor_sn["indoor_particle_sum"] <- df_sensor_sn["indoor_opc_bin0"] + df_sensor_sn["indoor_opc_bin1"] + df_sensor_sn["indoor_opc_bin2"]
+
 ```
 
 
 ```{r}
 # Add Indoor / Outdoor ratio columns to the dataframe
 
-# Create a list of datatypes
+# Create a list of data types
 bin <- na.omit(str_match(names(df_sensor_sn), "^indoor_(.*)")[,2])
 
-# Create list of cols from og data 
+# Create list of cols from original data 
 indoor <- df_sensor_sn[paste0("indoor_", bin)]
 outdoor <- df_sensor_sn[paste0("outdoor_", bin)]
 
@@ -41,11 +42,8 @@ ratio_name <- paste0("ratio_", bin)
 
 # Calculate new cols and add to dataframe
 df_sensor_sn[ratio_name] <- indoor / outdoor
-```
 
-```{r}
-# bin <- na.omit(str_match(names(df_sensor_sn), "^outdoor_(.*_.*)")[,1])
-
+df_sensor_sn
 ```
 
 
@@ -71,12 +69,115 @@ df_sensor_sn %>%
   )
 
 ```
+```{r}
+df_sensor_sn %>%
+  select(ratio_opc_pm1, ratio_opc_pm25, ratio_opc_pm10, ratio_particle_sum, hepa_installed) %>%
+  pivot_longer(
+    names_to = c("bin"),
+  
+    cols = -c(hepa_installed)
+  ) %>%
+  ggplot(aes(bin, value)) +
+  geom_boxplot(notch = TRUE) +
+  scale_y_log10() +
+  facet_wrap(vars(hepa_installed)) +
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45)
+  )
+
+```
+
+```{r}
+# Resample data to 5 minute intervals
+
+df_sensor_resample <-
+  df_sensor_sn %>%
+  mutate(intervalmin = lubridate::minute(timestamp) %/% 5,
+         intervalhour = lubridate::hour(timestamp),
+         intervaldate = lubridate::date(timestamp)
+         ) %>%
+  group_by(intervalmin, intervalhour, intervaldate) %>%
+  summarise(across(starts_with("ratio"), 
+                   list(mean = ~ mean(.x, na.rm = TRUE))
+                   )
+            )
+
+# Add timestamp to new dataframe
+minutes <- as.character(df_sensor_resample$intervalmin * 5)
+hours <- as.character(df_sensor_resample$intervalhour)
+daymonthyear <- as.character(df_sensor_resample$intervaldate)
+
+thetime <- paste(hours, minutes, sep = ":")
+timeandday <- paste(daymonthyear, thetime, sep = " ")
+
+df_sensor_resample["timestamp"] <- lubridate::ymd_hm(timeandday)
+
+# Remove temporary columns from dataframe
+df_sensor_resample <-
+  df_sensor_resample %>%
+  subset(select=-c(intervalmin, intervalhour, intervaldate))
+
+# Reorder dataframe chronologically
+df_sensor_resample <- df_sensor_resample[order(df_sensor_resample$timestamp),]
+```
+
+```{r}
+# Get date of filter install
+hepa_install_df <-
+  df_sensor_sn %>%
+  group_by(hepa_installed) %>%
+  summarize(inst = min(timestamp))
+
+hepa_install_dt <- hepa_install_df[2,2]
+
+# Add hepa_installed to resampled dataframe
+df_sensor_resample <-
+  df_sensor_resample %>%
+  mutate(hepa_installed = if_else(timestamp > hepa_install_dt, TRUE, FALSE))
+```
 
 
+```{r}
+# Find statistics for before and after
+
+df_sensor_resample %>%  
+  group_by(hepa_installed) %>%
+  summarize(across(starts_with("ratio"),
+                   list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                        twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                        seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                        nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                        mean = ~ mean(.x, na.rm = TRUE),
+                        median = ~ median(.x, na.rm = TRUE)
+                        )
+                   )
+            ) %>%
+  pivot_longer(
+    names_to = c(NA, "bin1", "bin2", ".value"),
+    names_sep = "_",
+    cols = -c(hepa_installed)
+  )
+
+```
 
 
+```{r}
+df_sensor_resample %>%
+  select(ratio_opc_pm1_mean, ratio_opc_pm25_mean, ratio_opc_pm10_mean, ratio_particle_sum_mean, hepa_installed) %>%
+  pivot_longer(
+    names_to = c("bin"),
+  
+    cols = -c(hepa_installed)
+  ) %>%
+  ggplot(aes(bin, value)) +
+  geom_boxplot(notch = TRUE) +
+  scale_y_log10() +
+  facet_wrap(vars(hepa_installed)) +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 23, vjust = 1, hjust = 1)
+  )
 
-
+```
 
 
 
