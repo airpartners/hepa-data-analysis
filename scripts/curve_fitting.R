@@ -26,17 +26,6 @@
 library("dplyr")
 library("pracma")
 
-## Random data
-x <- seq(0, 1, len = 1024)
-pos <- c(0.1, 0.13, 0.15, 0.23, 0.25, 0.40, 0.44, 0.65, 0.76, 0.78, 0.8)
-hgt <- c(4, 5, 3, 4, 5, 4.2, 2.1, 4.3, 3.1, 1.1, 5.1)
-wdt <- c(0.005, 0.005, 0.006, 0.01, 0.01, 0.03, 0.01, 0.01, 0.005, 0.008, 0.5)
-
-p_signal <- numeric(length(x))
-for (i in seq(along = pos)) {
-  p_signal <- p_signal + hgt[i] / (1 + abs((x - pos[i]) / wdt[i]))^4
-}
-
 # Find the first local minimum after the index of peak_row in y
 # that occurs below the min_threshold.
 get_first_valleys <- function(data, peaks, min_threshold) {
@@ -70,13 +59,15 @@ get_first_valleys <- function(data, peaks, min_threshold) {
 
 # Exponential curve fitting for air quality data; returns dataframe containing
 # k-values of curves
-# TODO: nls function returns various weird errors, diagnose why these errors appear
+# TODO: nls function returns various weird errors, diagnose why these errors
+# appear
 # e.g. "number of iterations", "singular gradient", "NaNs, Inf, etc.", etc.
 curve_fitting <- function(data, peaks, valleys) {
     # Create empty DataFrame for storing k values
   alphas.data <- data.frame(
     "peak_idx" = numeric(0),
     "valley_idx" = numeric(0),
+    "peak_hgt" = numeric(0),
     "k_val" = numeric(0),
     "conv_tol" = numeric(0)
   )
@@ -99,13 +90,14 @@ curve_fitting <- function(data, peaks, valleys) {
     log_alpha <- as.double(params["log_alpha"])
     alpha <- exp(log_alpha)
     # Get achieved convergence tolerance as metric for accuracy of fit
-    # NOTE: R^2 value can be calculated but is not a useful metric 
+    # NOTE: R^2 value can be calculated but is not a useful metric
     # for nonlinear models
     conv <- fit$convInfo$finTol
     # Add alpha to dataframe
     alphas.newdata <- data.frame(
       "peak_idx" = c(peaks[row, 2]),
       "valley_idx" = c(valleys[row, 2]),
+      "peak_hgt" = c(peaks[row, 1]),
       "k_val" = c(alpha),
       "conv_tol" = c(conv)
     )
@@ -113,22 +105,3 @@ curve_fitting <- function(data, peaks, valleys) {
   }
   alphas.data <- arrange_all(alphas.data)
 }
-
-## Testing code (using Random Data from above)
-peaks <- findpeaks(p_signal,
-                   ndowns = 10,
-                   minpeakheight = 3,
-                   threshold = 0,
-                   sortstr = TRUE)
-valleys <- get_first_valleys(p_signal, peaks, 3)
-alphas <- curve_fitting(p_signal, peaks, valleys)
-print(alphas)
-
-plot(p_signal, type = "l",
-  main = "Testing Code",
-  xlab = "If you see this graph, curve fitting works.",
-  ylab = "PM concentrations (ug/m^3)",
-  col = "navy")
-  grid()
-points(peaks[, 2], peaks[, 1], pch = 20, col = "maroon")
-points(valleys[, 2], valleys[, 1], pch = 20, col = "darkgreen")
