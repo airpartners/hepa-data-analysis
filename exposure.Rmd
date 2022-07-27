@@ -1,0 +1,163 @@
+```{r setup}
+library(ggplot2)
+library(tidyverse)
+library(broom)
+library(reticulate)
+library(pracma)
+library(cowplot)
+source("scripts/curve_fitting.R")
+# py_install("pandas")
+source_python("read_pickle.py")
+
+```
+
+
+```{r}
+# Download a file for analysis
+df_sensor_sn <- read_pickle_file(
+    "./hepa-pckls/indoor-outdoor-pairs/48 Putnam Street #1/MOD-PM-00112.pckl"
+)
+```
+
+
+```{r}
+# Convert all zeros in outdoor data to NA to prevent divide by zero errors
+bin <- na.omit(str_match(names(df_sensor_sn), "^outdoor_([neph|opc].*)")[,1])
+df_sensor_sn[, bin][df_sensor_sn[, bin] < 0.01] <- NA
+
+# Add columns for sub 1nm particle count
+df_sensor_sn["outdoor_particle_sum"] <- df_sensor_sn["outdoor_opc_bin0"] + df_sensor_sn["outdoor_opc_bin1"] + df_sensor_sn["outdoor_opc_bin2"]
+df_sensor_sn["indoor_particle_sum"] <- df_sensor_sn["indoor_opc_bin0"] + df_sensor_sn["indoor_opc_bin1"] + df_sensor_sn["indoor_opc_bin2"]
+
+```
+
+
+```{r}
+# Add Indoor / Outdoor ratio columns to the dataframe
+
+# Create a list of data types
+bin <- na.omit(str_match(names(df_sensor_sn), "^indoor_(.*)")[,2])
+
+# Create list of cols from original data 
+indoor <- df_sensor_sn[paste0("indoor_", bin)]
+outdoor <- df_sensor_sn[paste0("outdoor_", bin)]
+
+#create new col names
+ratio_name <- paste0("ratio_", bin)
+
+# Calculate new cols and add to dataframe
+df_sensor_sn[ratio_name] <- indoor / outdoor
+
+df_sensor_sn %>%
+  unnest_wider(hepa_installed)
+
+```
+
+```{r}
+df_sensor_sn %>%
+  group_by(hepa_installed) %>%
+  ggplot(aes(timestamp, indoor_opc_bin0)) +
+  geom_line(color = "blue") +
+  geom_line(aes(y = outdoor_opc_bin0), color = "green") + 
+  geom_line(aes(y = ratio_opc_bin0)) + 
+  geom_hline(yintercept = quantile(df_sensor_sn$indoor_opc_bin0, .95, na.rm = TRUE ), linetype="dashed", color = "red") +
+  facet_wrap(vars(hepa_installed))
+```
+
+Exposure: Concentration / time (area under curve)
+
+Concentration: Amount fo pollutant in the air
+
+modpm opc bins are in particles / m^3 not ug/m^3
+
+Indoor/Outdoor ratio: how do we account for this with above metrics?
+
+```{r}
+# Find statistics for before and after
+df_hepa_stats <-
+  df_sensor_sn %>%  
+  group_by(hepa_installed) %>%
+  summarize(across(contains("bin"),
+                   list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                        twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                        seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                        nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                        mean = ~ mean(.x, na.rm = TRUE),
+                        median = ~ median(.x, na.rm = TRUE)
+                        )
+                   )
+            ) %>%
+  pivot_longer(
+    names_to = c("location", "sensor", "bin", ".value"),
+    names_sep = "_",
+    cols = -c(hepa_installed)
+  ) %>%
+  filter(location != "outdoor")
+
+df_hepa_stats
+
+```
+
+
+```{r}
+df_sensor_sn %>%
+  filter(hepa_installed == FALSE) %>%
+  ggplot(aes(timestamp, indoor_opc_bin0)) +
+  geom_line(color = "blue") +
+  geom_hline(yintercept = df_hepa_stats$fifth[1], linetype = "dashed", color = "red") + 
+  geom_hline(yintercept = df_hepa_stats$twentyfifth[1], linetype = "dashed", color = "green") +
+  geom_hline(yintercept = df_hepa_stats$median[1], linetype = "dashed", color = "black") + 
+  geom_hline(yintercept = df_hepa_stats$seventyfifth[1], linetype = "dashed", color = "orange")
+
+df_sensor_sn %>%
+  filter(hepa_installed == TRUE) %>%
+  ggplot(aes(timestamp, indoor_opc_bin0)) +
+  geom_line(color = "blue") +
+  geom_hline(yintercept = df_hepa_stats$fifth[2], linetype = "dashed", color = "red") + 
+  geom_hline(yintercept = df_hepa_stats$twentyfifth[2], linetype = "dashed", color = "green") +
+  geom_hline(yintercept = df_hepa_stats$median[1], linetype = "dashed", color = "black") + 
+  geom_hline(yintercept = df_hepa_stats$seventyfifth[1], linetype = "dashed", color = "orange")
+```
+25th percentile seems like best metric for baseline concentration, therefore the
+reduction of baseline concentration can be found by comparing the 25th percentile
+before and after installation. This is a time independent metric but it requires
+us to ignore potential impacts of outdoor concentrations.
+
+indoor/outdoor ratio baseline reduction is less compelling and harder to understand
+
+```{r}
+df_baseline_reduction <-
+  df_hepa_stats %>%
+  group_by(location, sensor, bin) %>%
+  summarise(baseline_reduction = (median[1] - median[2]))
+
+df_baseline_reduction
+```
+```{r}
+# 
+df_baseline_reduction["binint"] <- as.integer(sub(".*?(\\d+)", "\\1", df_baseline_reduction$bin))
+
+df_baseline_reduction %>%
+  filter(location == "indoor", sensor == "opc") %>%
+  ggplot(aes(binint, baseline_reduction, label = baseline_reduction)) +
+  geom_point()+
+  geom_text(hjust = 0, vjust = -1)
+  xlab("Bin Number")
+
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+
+
+
+

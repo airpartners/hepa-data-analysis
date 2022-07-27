@@ -78,14 +78,46 @@ df_sensor_sn %>%
     cols = -c(hepa_installed)
   ) %>%
   ggplot(aes(bin, value)) +
-  geom_boxplot(notch = TRUE) +
+  geom_boxplot(notch = TRUE, aes(fill = bin)) +
   scale_y_log10() +
   facet_wrap(vars(hepa_installed)) +
+  ggtitle("Particulate Measurements Before and After HEPA Filter Installation") + 
   theme(
-    axis.text.x = element_text(size = 8, angle = 45)
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 14)
   )
 
 ```
+```{r}
+
+# Alternatinve graph layout
+df_sensor_sn %>%
+  select(ratio_opc_pm1, ratio_opc_pm25, ratio_opc_pm10, ratio_particle_sum, hepa_installed) %>%
+  pivot_longer(
+    names_to = c("bin"),
+  
+    cols = -c(hepa_installed)
+  ) %>%
+  ggplot(aes(hepa_installed, value)) +
+  geom_boxplot(notch = TRUE, aes(fill = hepa_installed)) +
+  scale_y_log10() +
+  coord_flip() +
+  facet_wrap(vars(bin)) +
+  ggtitle("Particulate Measurements Before and After HEPA Filter Installation") + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 14)
+  )
+
+
+```
+
 
 ```{r}
 # Resample data to 5 minute intervals
@@ -133,7 +165,7 @@ hepa_install_dt <- hepa_install_df[2,2]
 # Add hepa_installed to resampled dataframe
 df_sensor_resample <-
   df_sensor_resample %>%
-  mutate(hepa_installed = if_else(timestamp > hepa_install_dt, TRUE, FALSE))
+  mutate(hepa_installed = if_else(timestamp > hepa_install_dt, "Installed", "Not Installed"))
 ```
 
 
@@ -166,15 +198,19 @@ df_sensor_resample %>%
   select(ratio_opc_pm1_mean, ratio_opc_pm25_mean, ratio_opc_pm10_mean, ratio_particle_sum_mean, hepa_installed) %>%
   pivot_longer(
     names_to = c("bin"),
-  
     cols = -c(hepa_installed)
   ) %>%
   ggplot(aes(bin, value)) +
-  geom_boxplot(notch = TRUE) +
+  geom_boxplot(notch = TRUE, aes(fill = bin)) +
   scale_y_log10() +
   facet_wrap(vars(hepa_installed)) +
+  ggtitle("Particulate Measurements Before and After HEPA Filter Installation") + 
   theme(
-    axis.text.x = element_text(size = 10, angle = 23, vjust = 1, hjust = 1)
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 14)
   )
 
 ```
