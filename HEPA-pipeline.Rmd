@@ -1,3 +1,7 @@
+# HEPA Pipeline Demo
+
+This pipeline is used to create visualizations for and summarize data from air quality sensors used in the Air Partners HEPA Pilot program.
+
 
 ```{r setup}
 library(ggplot2)
@@ -16,8 +20,13 @@ source_python("read_pickle.py")
 ```{r}
 # Download a file for analysis
 df_sensor_sn <- read_pickle_file(
-    "hepa-pckls/indoor-outdoor-pairs/302 Lexington Street /MOD-PM-00112.pckl"
+    "hepa-pckls/indoor-outdoor-pairs/48 Putnam Street #1/MOD-PM-00130.pckl"
 )
+# Filter out dataframe by timestamps
+df_sensor_sn <- df_sensor_sn[!(is.na(df_sensor_sn$hepa_installed)), ]
+# Replace all other nans with 0s
+df_sensor_sn[is.na(df_sensor_sn)] <- 0
+df_sensor_sn$hepa_installed <- as.logical(df_sensor_sn$hepa_installed)
 ```
 
 
@@ -28,12 +37,27 @@ df_sensor_sn %>%
   geom_line(aes(y = outdoor_opc_bin0, color = "green"))
 ```
 
+```{r}
+# Convert all zeros in outdoor data to NA to prevent divide by zero errors
+bin <- na.omit(str_match(names(df_sensor_sn), "^outdoor_([neph|opc].*)")[,1])
+df_sensor_sn[, bin][df_sensor_sn[, bin] == 0] <- NA
+
+# Add columns for sub 1nm particle count
+df_sensor_sn["outdoor_particle_sum"] <-
+  df_sensor_sn["outdoor_opc_bin0"] +
+  df_sensor_sn["outdoor_opc_bin1"] +
+  df_sensor_sn["outdoor_opc_bin2"]
+df_sensor_sn["indoor_particle_sum"] <-
+  df_sensor_sn["indoor_opc_bin0"] +
+  df_sensor_sn["indoor_opc_bin1"] +
+  df_sensor_sn["indoor_opc_bin2"]
+```
 
 ```{r}
 # Add Indoor / Outdoor ratio columns to the dataframe
 
 # Create a list of datatypes
-bin <- na.omit(str_match(names(df_sensor_sn), "^indoor_(.*)")[,2])
+bin <- na.omit(str_match(names(df_sensor_sn), "^indoor_(.*)")[, 2])
 
 # Create list of cols from og data
 indoor <- df_sensor_sn[paste0("indoor_", bin)]
@@ -132,7 +156,7 @@ in_out[is.na(in_out)] <- 0
 peaks <- findpeaks(in_out,
                    nups = 1,
                    ndowns = 1,
-                   minpeakheight = 10,
+                   minpeakheight = 3,
                    minpeakdistance = 200,
                    threshold = 0)
 print(peaks)
@@ -154,6 +178,14 @@ valleys <- get_first_valleys(in_out, peaks, 2)
 print(valleys)
 
 # Plot valleys on top of current time series
+plot(in_out,
+  type = "l",
+  main = "Indoor/Outdoor Ratio",
+  xlab = "Time (indices)",
+  ylab = "Ratio of indoor/outdoor concentrations",
+  col = "navy")
+  grid()
+points(peaks[, 2], peaks[, 1], pch = 20, col = "maroon")
 points(valleys[, 2], valleys[, 1], pch = 20, col = "green")
 ```
 
@@ -161,4 +193,85 @@ points(valleys[, 2], valleys[, 1], pch = 20, col = "green")
 # Get the decay values between each peak and valley highlighted
 decays <- curve_fitting(in_out, peaks, valleys)
 decays
+```
+
+```{r}
+# Get index of when HEPA was installed
+hepa_install_idx <- match(TRUE, df_sensor_sn$hepa_installed)
+
+# Create summary of decay values for before and after
+decays["hepa_installed"] <- decays["peak_idx"] >= hepa_install_idx
+decays["peak_width"] <- decays["valley_idx"] - decays["peak_idx"]
+
+decay_sum <-
+  decays %>%
+    group_by(hepa_installed) %>%
+    summarize(
+      k_val_mean = mean(k_val, na.rm = TRUE),
+      k_val_median = median(k_val, na.rm = TRUE),
+      k_val_min = min(k_val, na.rm = TRUE),
+      k_val_max = max(k_val, na.rm = TRUE),
+      peak_hgt_mean = mean(peak_hgt, na.rm = TRUE),
+      peak_wdh_mean = mean(peak_width, na.rm = TRUE)
+    )
+decay_sum
+```
+
+## Performing Pipeline on Multiple Datasets
+```{r}
+# Get list of all files
+dirs <- list.dirs("hepa-pckls/indoor-outdoor-pairs", recursive = FALSE)
+files <- list.files(dirs, full.names = TRUE)
+```
+
+## Heatmap
+```{r}
+library(reshape)
+
+# TODO figure out how to get x labels on graph
+df_opc_bins <- df_sensor_sn[, c("timestamp",
+                                "ratio_opc_bin0",
+                                "ratio_opc_bin1",
+                                "ratio_opc_bin2",
+                                "ratio_opc_bin3",
+                                "ratio_opc_bin4",
+                                "ratio_opc_bin5",
+                                "ratio_opc_bin6",
+                                "ratio_opc_bin7",
+                                "ratio_opc_bin8",
+                                "ratio_opc_bin9",
+                                "ratio_opc_bin10",
+                                "ratio_opc_bin11",
+                                "ratio_opc_bin12",
+                                "ratio_opc_bin13",
+                                "ratio_opc_bin14",
+                                "ratio_opc_bin15",
+                                "ratio_opc_bin16",
+                                "ratio_opc_bin17",
+                                "ratio_opc_bin18",
+                                "ratio_opc_bin19",
+                                "ratio_opc_bin20",
+                                "ratio_opc_bin21",
+                                "ratio_opc_bin22",
+                                "ratio_opc_bin23")]
+df_opc_bins[is.na(df_opc_bins)] <- 0
+df_opc_bins <- 
+  melt(df_opc_bins, id = c("timestamp"), value.name = "concentrations")
+df_opc_bins <- df_opc_bins %>% mutate(time = cut(timestamp, "hours"))
+df_opc_bins %>%
+  ggplot(aes(time, variable)) +
+  geom_tile(aes(fill = value)) +
+  labs(
+    title = "Heatmap of bin concentrations",
+    y = "bins",
+    fill = "ratios"
+  ) +
+  scale_fill_gradient(limits = c(0, 50), low = "blue", high = "orange") +
+  theme(plot.margin = unit(c(1.2, 0.1, 1.2, 0.1), "cm"),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
 ```
