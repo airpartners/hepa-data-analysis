@@ -50,6 +50,3 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
-
-# Rmd output files
-HEPA-pipeline.html
