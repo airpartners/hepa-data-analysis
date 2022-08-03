@@ -25,7 +25,7 @@ get_basic_sum <- function(data, colname, logical_array) {
                           )
                     )
               ) %>%
-      pivot_longer(
+      pivot_longer( # nolint
         names_to = c(NA, "bin1", "bin2", ".value"),
         names_sep = "_",
         cols = -c(logical_array)
@@ -47,9 +47,9 @@ get_decay_sum <- function(data, colname, logical_array) {
                     minpeakdistance = 200,
                     threshold = 0)
   # Get nearest valleys to those peaks
-  valleys <- get_first_valleys(in_out, peaks, 2)
+  valleys <- get_first_valleys(in_out, peaks, 2) # nolint
   # Get the decay values between each peak and valley highlighted
-  decays <- curve_fitting(in_out, peaks, valleys)
+  decays <- curve_fitting(in_out, peaks, valleys) # nolint
   # Get index of when HEPA was installed, since calculations so far made by
   # index
   hepa_install_idx <- match(TRUE, as.logical(unlist(data[logical_array])))
@@ -60,14 +60,14 @@ get_decay_sum <- function(data, colname, logical_array) {
 
   decay_sum <-
     decays %>%
-      group_by(logic) %>%
+      group_by(logic) %>% # nolint
       summarize(
-        k_val_mean = mean(k_val, na.rm = TRUE),
+        k_val_mean = mean(k_val, na.rm = TRUE), #nolint
         k_val_median = median(k_val, na.rm = TRUE),
         k_val_min = min(k_val, na.rm = TRUE),
         k_val_max = max(k_val, na.rm = TRUE),
-        peak_hgt_mean = mean(peak_hgt, na.rm = TRUE),
-        peak_wdh_mean = mean(peak_width, na.rm = TRUE)
+        peak_hgt_mean = mean(peak_hgt, na.rm = TRUE), #nolint
+        peak_wdh_mean = mean(peak_width, na.rm = TRUE) #nolint
     )
   decay_sum
 }

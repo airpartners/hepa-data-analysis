@@ -31,7 +31,7 @@ library("pracma")
 get_first_valleys <- function(data, peaks, min_threshold) {
   # Iterate through rows of peaks matrix
   valley_mat <- matrix(nrow = nrow(peaks), ncol = 2)
-  for (row in 1:nrow(peaks)) {
+  for (row in 1:nrow(peaks)) { #nolint
     idx <- peaks[row, 2]
     n <- TRUE
     # create while loop to check for local minima
@@ -72,7 +72,7 @@ curve_fitting <- function(data, peaks, valleys) {
     "conv_tol" = numeric(0)
   )
   # Define parameters for curve fitting function for each row
-  for (row in 1:nrow(peaks)) {
+  for (row in 1:nrow(peaks)) { # nolint
     row <- as.double(row)
     i_range <- peaks[row, 2]:valleys[row, 2]
     sect <- data[i_range]

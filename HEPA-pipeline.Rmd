@@ -7,10 +7,15 @@ This pipeline is used to create visualizations for and summarize data from air q
 library(ggplot2)
 library(tidyverse)
 library(broom)
+library(lubridate)
 library(reticulate)
 library(pracma)
 library(cowplot)
+library(reshape)
 source("scripts/curve_fitting.R")
+source("scripts/air_time_series.R")
+
+# UNCOMMENT LINE BELOW FOR FIRST TIME RUNNING
 # py_install("pandas")
 source_python("read_pickle.py")
 
@@ -104,7 +109,6 @@ uninstalled_dates <-
   df_sensor_sn[df_sensor_sn$hepa_installed, ]
 
 # Create time series
-source("scripts/air_time_series.R")
 air_time_series(df_sensor_sn, "opc_pm1",
                 logical_array = "hepa_installed",
                 summary = summary,
@@ -225,51 +229,170 @@ files <- list.files(dirs, full.names = TRUE)
 ```
 
 ## Heatmap
-```{r}
-library(reshape)
 
-# TODO figure out how to get x labels on graph
-df_opc_bins <- df_sensor_sn[, c("timestamp",
-                                "ratio_opc_bin0",
-                                "ratio_opc_bin1",
-                                "ratio_opc_bin2",
-                                "ratio_opc_bin3",
-                                "ratio_opc_bin4",
-                                "ratio_opc_bin5",
-                                "ratio_opc_bin6",
-                                "ratio_opc_bin7",
-                                "ratio_opc_bin8",
-                                "ratio_opc_bin9",
-                                "ratio_opc_bin10",
-                                "ratio_opc_bin11",
-                                "ratio_opc_bin12",
-                                "ratio_opc_bin13",
-                                "ratio_opc_bin14",
-                                "ratio_opc_bin15",
-                                "ratio_opc_bin16",
-                                "ratio_opc_bin17",
-                                "ratio_opc_bin18",
-                                "ratio_opc_bin19",
-                                "ratio_opc_bin20",
-                                "ratio_opc_bin21",
-                                "ratio_opc_bin22",
-                                "ratio_opc_bin23")]
-df_opc_bins[is.na(df_opc_bins)] <- 0
-df_opc_bins <- 
-  melt(df_opc_bins, id = c("timestamp"), value.name = "concentrations")
-df_opc_bins <- df_opc_bins %>% mutate(time = cut(timestamp, "hours"))
-df_opc_bins %>%
-  ggplot(aes(time, variable)) +
-  geom_tile(aes(fill = value)) +
+```{r}
+
+# Vector that assigns each bin to a size (middle)
+sizes <- c(
+  "opc_bin0" = 0.405,
+  "opc_bin1" = 0.56,
+  "opc_bin2" = 0.83,
+  "opc_bin3" = 1.15,
+  "opc_bin4" = 1.5,
+  "opc_bin5" = 2.0,
+  "opc_bin6" = 2.65,
+  "opc_bin7" = 3.5,
+  "opc_bin8" = 4.6,
+  "opc_bin9" = 5.85,
+  "opc_bin10" = 7.25,
+  "opc_bin11" = 9.0,
+  "opc_bin12" = 11,
+  "opc_bin13" = 13,
+  "opc_bin14" = 15,
+  "opc_bin15" = 17,
+  "opc_bin16" = 19,
+  "opc_bin17" = 21,
+  "opc_bin18" = 23.5,
+  "opc_bin19" = 26.5,
+  "opc_bin20" = 29.5,
+  "opc_bin21" = 32.5,
+  "opc_bin22" = 35.5,
+  "opc_bin23" = 38.5
+)
+# Vector that assigns each bin to a height
+# In relation to the size of a bin, the minimum particle size in that bin
+# should be {size - (height/2)} and the maximum {size + (height/2)}
+heights <- c(
+  "opc_bin0" = 0.11,
+  "opc_bin1" = 0.20,
+  "opc_bin2" = 0.34,
+  "opc_bin3" = 0.30,
+  "opc_bin4" = 0.40,
+  "opc_bin5" = 0.60,
+  "opc_bin6" = 0.70,
+  "opc_bin7" = 1.0,
+  "opc_bin8" = 1.2,
+  "opc_bin9" = 1.3,
+  "opc_bin10" = 1.5,
+  "opc_bin11" = 2.0,
+  "opc_bin12" = 2.0,
+  "opc_bin13" = 2.0,
+  "opc_bin14" = 2.0,
+  "opc_bin15" = 2.0,
+  "opc_bin16" = 2.0,
+  "opc_bin17" = 2.0,
+  "opc_bin18" = 3.0,
+  "opc_bin19" = 3.0,
+  "opc_bin20" = 3.0,
+  "opc_bin21" = 3.0,
+  "opc_bin22" = 3.0,
+  "opc_bin23" = 3.0
+)
+
+```
+
+```{r}
+get_cols <- function(loc, bin_type) {
+  cols <- na.omit(
+    str_match(colnames(df_sensor_sn), paste0("^", loc, "_", bin_type, "_bin.*"))
+  )[, 1]
+  cols <- append(cols, "timestamp")
+}
+
+# Function that properly formats dataframe for the heatmap
+df_bins <- function(df, loc) {
+  df_out <- df[, get_cols(loc, "opc")]
+  df_out[is.na(df_out)] <- 0
+  df_out <-
+    melt(df_out, id = c("timestamp"))
+  df_out <-
+    df_out %>%
+      mutate(
+        time = cut(timestamp, "hours"),
+        sizes = sizes[gsub("^(ratio|indoor|outdoor)_", "", variable)],
+        heights = heights[gsub("^(ratio|indoor|outdoor)_", "", variable)]
+    )
+}
+
+df_ratio_bins <- df_bins(df_sensor_sn, "ratio")
+df_indoor_bins <- df_bins(df_sensor_sn, "indoor")
+df_outdoor_bins <- df_bins(df_sensor_sn, "outdoor")
+
+```
+
+```{r}
+# Create heatmap for I/O ratio data
+df_ratio_bins %>%
+  ggplot(aes(time, sizes)) +
+  geom_tile(aes(fill = value, height = heights)) +
+  scale_x_discrete(
+    breaks = df_ratio_bins$time[
+      (wday(df_ratio_bins$timestamp) == 1) &
+      (hour(df_ratio_bins$timestamp) == 0)
+    ]
+  ) +
   labs(
     title = "Heatmap of bin concentrations",
-    y = "bins",
-    fill = "ratios"
+    y = "Particle diameter (um)",
+    fill = "I/O Ratio"
   ) +
+  ylim(c(0, 10)) +
   scale_fill_gradient(limits = c(0, 50), low = "blue", high = "orange") +
   theme(plot.margin = unit(c(1.2, 0.1, 1.2, 0.1), "cm"),
         axis.ticks.x = element_blank(),
-        axis.text.x = element_blank(),
+        plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+```
+
+```{r}
+# Create heatmap to examine PM concentrations indoors
+df_indoor_bins %>%
+  ggplot(aes(time, sizes)) +
+  geom_tile(aes(fill = value, height = heights)) +
+  scale_x_discrete(
+    breaks = df_indoor_bins$time[
+      (wday(df_indoor_bins$timestamp) == 1) &
+      (hour(df_indoor_bins$timestamp) == 0)
+    ]
+  ) +
+  labs(
+    title = "Heatmap of bin concentrations",
+    y = "Particle diameter (um)",
+    fill = "Concentrations"
+  ) +
+  # ylim(c(0, 10)) +
+  scale_y_log10() +
+  scale_fill_gradient(limits = c(0, 50), low = "blue", high = "orange") +
+  theme(plot.margin = unit(c(1.2, 0.1, 1.2, 0.1), "cm"),
+        axis.ticks.x = element_blank(),
+        plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+```
+
+```{r}
+# Create heatmap to examine PM concentrations outside
+df_outdoor_bins %>%
+  ggplot(aes(time, sizes)) +
+  geom_tile(aes(fill = value, height = heights)) +
+  scale_x_discrete(
+    breaks = df_outdoor_bins$time[
+      (wday(df_outdoor_bins$timestamp) == 1) &
+      (hour(df_outdoor_bins$timestamp) == 0)
+    ]
+  ) +
+  labs(
+    title = "Heatmap of bin concentrations",
+    y = "Particle diameter (um)",
+    fill = "Concentration"
+  ) +
+  ylim(c(0, 10)) +
+  scale_fill_gradient(limits = c(0, 50), low = "blue", high = "orange") +
+  theme(plot.margin = unit(c(1.2, 0.1, 1.2, 0.1), "cm"),
+        axis.ticks.x = element_blank(),
         plot.background = element_blank(),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
