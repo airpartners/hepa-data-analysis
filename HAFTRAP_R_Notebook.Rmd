@@ -1,0 +1,338 @@
+---
+title: "HAFTRAP_R_Notebook"
+output: html_notebook
+author: Scott Hersey, drawing from Neel Dhulipala's HEPA-data-analysis code in places.
+---
+
+
+
+```{r}
+library(openair)
+library(corrplot)
+library(ggplot2)
+library(reshape2)
+library(purrr)
+library(tidyr)
+library(lubridate)
+library(dplyr)
+
+# Define files to be imported and filter on datetime
+indoorfile <- 'data/MOD_indoor.csv'
+outdoorfile <- 'data/MOD_outdoor.csv'
+
+hepatime <- "2022-02-07 10:00:00"
+  
+# HEPA Times
+# Deployment 1: datetime(2022,02,07,10,00,00)
+# Deployment 2: datetime(2022,02,16,10,00,00)
+# Deployment 3: datetime(2022,03,20,08,00,00)
+# Deployment 4: datetime(2022,04,08,09,00,00)
+```
+
+
+```{r}
+# Import and prepare data
+
+# Import indoor data
+indoordata <- read.csv(indoorfile, header = TRUE)
+date <- as.POSIXct(strptime(indoordata$timestamp_local, format = "%Y-%m-%dT%H:%M:%SZ", tz = "America/New_York"))
+indoordata$date_1min <- round_date(date, unit = "1 min") #creating date1min vector. Turns 00:00:01 and 00:00:59 into 00:00 and 00:01, respectively.
+indoordata$pm1_num <- indoordata$bin0 + indoordata$bin1 + indoordata$bin2
+#indoordata <- cbind(indoordata, date, date_1min, pm1_num)
+#indoordata <- cbind(indoordata, date) #add back in a "date" column for openair functions
+
+# Import outdoor data
+outdoordata <- read.csv(outdoorfile, header = TRUE)
+date <- as.POSIXct(strptime(outdoordata$timestamp_local, format = "%Y-%m-%dT%H:%M:%SZ", tz = "America/New_York"))
+outdoordata$date_1min <- round_date(date, unit = "1 min") #creating date1min vector. Turns 00:00:01 and 00:00:59 into 00:00 and 00:01, respectively.
+outdoordata$pm1_num <- outdoordata$bin0 + outdoordata$bin1 + outdoordata$bin2
+#outdoordata <- cbind(outdoordata, date, date_1min, pm1_num)
+
+#outdoordata <- cbind(outdoordata, date) #add back in a "date" column for openair functions
+
+# Set 0 values in outdoor data to NaN to prevent errors in creating ratios later on
+outdoordata[outdoordata == 0] <- NA
+```
+
+
+```{r}
+# Eliminate columns that indoor and outdoor dataframes don't have in common
+
+# extract column names of the data frames
+cols_indoor <- names(indoordata)
+cols_outdoor <- names(outdoordata)
+
+# find the intersection and difference of both column name vectors
+cols_intersection <- intersect(cols_indoor, cols_outdoor)
+cols_diff <- setdiff(cols_indoor, cols_outdoor)
+
+# subset the initial data frames
+indoordata <- indoordata[,cols_intersection]
+outdoordata <- outdoordata[,cols_intersection]
+```
+
+
+```{r}
+# Label all variables by "outdoor_" or "indoor_"
+colnames(outdoordata) <- paste0('outdoor_', colnames(outdoordata)) # add "outdoor_" label to all headers
+colnames(indoordata) <- paste0('indoor_', colnames(indoordata)) # add "indoor_" label to all headers
+
+
+# Time sync indoor and outdoor data
+joineddata <- left_join(indoordata, outdoordata, by = c("indoor_date_1min" = "outdoor_date_1min"))
+joineddata$date <- joineddata$indoor_date_1min #add back in a "date" column for openair functions
+
+# Attach joineddata to make calling variables easier
+attach(joineddata)
+```
+
+
+
+```{r}
+#Initial time series
+class(date)
+timePlot(joineddata, pollutant = c("indoor_bin0", 'indoor_pm1', 'indoor_pm25'))
+timePlot(joineddata, pollutant = c("outdoor_bin0", 'outdoor_pm1', 'outdoor_pm25'))
+
+class(date)
+timePlot(joineddata, pollutant = "indoor_bin0")
+
+```
+
+
+```{r}
+# Create some initial diurnal plots. To be replaced by static report code for mean/median/percentile plots.
+#date <- indoordata$indoor_date
+timeVariation(joineddata, pollutant = c("indoor_no", "indoor_co")) 
+timeVariation(joineddata, pollutant = c("indoor_pm1", "indoor_pm25"))
+
+timeVariation(joineddata, pollutant = c("outdoor_no", "outdoor_co")) 
+timeVariation(joineddata, pollutant = c("outdoor_pm1", "outdoor_pm25"))
+```
+
+
+```{r}
+# Correlation plots for variables
+pdf(file = "figures/corplot.pdf",   # The directory you want to save the file in
+    width = 8, # The width of the plot in inches
+    height = 10) # The height of the plot in inches
+
+
+cordata <- data.frame( indoor_temp,  indoor_rh,  indoor_pm1_num,  indoor_opcn3_pm1,  indoor_opcn3_pm25,  indoor_opcn3_pm10,  indoor_pm1_env,  indoor_pm25_env,  indoor_pm10_env,  indoor_neph_bin0,  indoor_no,  indoor_co,  indoor_no2,  indoor_pm25,  indoor_pm10, outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) # indoor_o3
+
+#outdoorcordata <- data.frame( outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) #joineddata$outdoor_o3
+
+#cordata <- cbind(indoorcordata, outdoorcordata)
+
+N <- cor(na.omit(cordata))
+corrplot(N, method = 'pie')
+
+```
+
+
+```{r}
+# Calculate indoor/outdoor ratios
+# NOTE: This works, and cycles through all of the numeric variables. Somehow it gets stuck somewhere at the very end, but it does work. Potential solution is to create new indoor/outdoor dfs based on the indoor/outdoor labels and compare the headers to see if something is there in indoor but not there in outdoor?
+
+
+
+# Go through every column of the dataframe
+for (colname in names(indoordata)) {
+    if (grepl("indoor_", colname, fixed = TRUE)) {
+        datatype <- substring(colname, 8, nchar(colname))  # Determines what the data vector is without the "indoor_" label
+        # Get indoor and outdoor columns that includes same datatype
+        indoor <- joineddata[paste0("indoor_", datatype)]
+        outdoor <- joineddata[paste0("outdoor_", datatype)]
+        # If indoor and outdoor columns are both of type double, create ratio col
+        if (sapply(indoor, class) == "numeric") {
+            ratio_name <- paste0("ratio_", datatype)
+            joineddata[ratio_name] <- indoor / outdoor
+        }
+    }
+}
+#joineddata["ratio_opc_bin0"]
+```
+
+
+```{r}
+# Create a mask for before and after filtration
+
+# joineddata$hepa_installed <- joineddata$date >= hepatime 
+#head(joineddata$hepa_installed)
+#tail(joineddata$hepa_installed)
+
+
+#Create new dataframes for HEPA installed and not installed
+
+hepa_installed <- joineddata[joineddata$date >= hepatime, ]
+no_hepa_installed <- joineddata[joineddata$date < hepatime, ]
+
+
+
+#head(no_hepa_installed)
+#tail(no_hepa_installed)
+
+
+
+
+```
+
+
+```{r}
+# Find statistics for before and after
+
+# NOTE: NONE OF THIS WORKS. NEED SOME NEEL MAGIC
+
+#hepamean <- mean(hepa_installed, na.rm = TRUE)
+
+
+ fifth_hepa <- apply(hepa_installed, 2, median, na.rm = TRUE)
+ fifth_nohepa <- apply(no_hepa_installed, 2, median, na.rm = TRUE)
+
+
+
+
+# joineddata %>%
+#   group_by(joineddata$hepa_installed) %>%
+#   summarise(fifth = quantile(indoor_bin0, probs = 0.05))
+
+
+
+# fifth <-  quantile(hepa_installed, .05, na.rm = TRUE)
+# twentyfifth <- quantile(hepa_installed, .25, na.rm = TRUE)
+
+
+# summary <-
+#   joineddata %>%
+#     group_by(hepa_installed) %>%
+#     summarize(across(starts_with("indoor"),
+#                     list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+#                           twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+#                           seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+#                           nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+#                           mean = ~ mean(.x, na.rm = TRUE),
+#                           median = ~ median(.x, na.rm = TRUE)
+#                           )
+#                     )
+#               ) %>%
+#     pivot_longer(
+#       names_to = c(NA, "bin1", "bin2", ".value"),
+#       names_sep = "_",
+#       cols = -c(hepa_installed)
+#     )
+```
+
+
+```{r}
+# EVERYTHING BELOW IS OLD CODE USED FOR PREVIOUS ANALYSIS
+```
+
+
+
+
+Generate truncated dataset for easier analysis.
+```{r}
+mydata.working <- data.frame(date, ws, wd, pm1, pm25, pm10, co, bin0, bin6, bin11, noise, temp_manifold, rh_manifold)
+attach(mydata.working)
+names(mydata.working)
+header<-names(mydata.working)
+```
+
+
+
+Plot probability density for quick view.
+```{r}
+
+#meltdf<-melt(mydata.working, id="date")
+#ggplot(meltdf, aes(x=date, y=value, color=variable, group=variable)) + geom_line()
+
+
+
+mydata.working %>% keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_density()   
+
+
+
+```
+Quick time series for a preliminary view
+```{r}
+#timePlot(selectByDate(mydata.working, year = 2019, month = "sep"),
+#pollutant = c('co', 'bin0', 'bin6' , 'bin11'))
+
+#for(i in 1:ncol(mydata.working)) {
+#  TimePlot(mydata.working, pollutant = names(mydata.working[i])
+#}
+
+length<-ncol(mydata.working)
+pollutants<-numeric(length)
+for(i in 2:length) {   #The counter declaration
+  pollutants[i]<-names(mydata.working[i])
+  #then do something for each iteration
+  #timePlot(mydata.working, pollutant=names(mydata.working[i]))
+  #....
+} #And finish the enviroment.
+
+timePlot(mydata.working, pollutant=pollutants)
+#timePlot(mydata.working, pollutant=names(mydata.working[i]))
+#lapply(2:ncol(mydata.working),FUN=myPlot)
+
+
+#timePlot(mydata.working, pollutant = c("co", "bin0"), y.relation = "free")
+#timePlot(mydata.working, pollutant = c('co', 'bin0', 'bin6' , 'bin11'), y.relation = "free")
+
+#timePlot(mydata.working, pollutant = "co")
+#timePlot(mydata.working, pollutant = "bin0")
+#summaryPlot(mydata.working, percentile = 0.99, period="months")
+#summaryPlot(subset(mydata, select = c(date, co, bin0, pm1)))
+```
+
+Do any cleaning necessary from viewing the quick view - select a date range, eliminate outliers, etc.
+```{r}
+names(mydata.working)
+daterange <- mydata.working$date >"2019-09-01" & mydata.working$date < "2019-10-03"
+summary(daterange)
+mydata.working.daterange <- mydata.working(daterange)
+summaryPlot(mydata.working.daterange)
+```
+
+
+Show correlation plot: create new dataframe that is numeric; ignore NaNs.
+```{r}
+
+#mydata.cor <- mydata.working
+#mydata.cor$date<-NULL
+#summary(mydata.cor)
+#working.cor<-cor(na.omit(mydata.cor))
+working.num<-mydata.working[, (sapply(mydata.working,is.numeric))]
+working.cor<-cor(na.omit(working.num))
+corrplot(working.cor)
+```
+
+Start plotting specific R figures
+```{r}
+#polarPlot(mydata.working, pollutant = 'co', col = "jet", key.position = "bottom", key.footer = NULL)
+#polarPlot(mydata.working, pollutant = 'bin0', col = "jet", key.position = "bottom", key.footer = NULL)
+#polarPlot(mydata.working, pollutant = 'bin6', col = "jet", key.position = "bottom", key.footer = NULL)
+#polarPlot(mydata.working, pollutant = 'bin11', col = "jet", key.position = "bottom", key.footer = NULL)
+
+
+
+for(i in 1:ncol(mydata.working)){
+  polarPlot(mydata.working, pollutant = header[i], col = "jet", key.header = header[i], key.position = "bottom", key.footer = NULL)
+  
+}
+```
+
+Now plot deeper things like k cluster analysis.
+```{r}
+polarCluster(mydata.working, pollutant="co", n.clusters=2:10, cols= "Set2")
+```
+
+Decide on a number of clusters and re-plot that.
+```{r}
+polarCluster(mydata.working, pollutant = "bin0", x="ws", wd = "wd", n.clusters = 5, cols ="Paired")
+```
+
