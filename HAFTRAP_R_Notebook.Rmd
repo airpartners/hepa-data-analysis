@@ -14,6 +14,7 @@ library(reshape2)
 library(purrr)
 library(tidyr)
 library(lubridate)
+library(reticulate)
 library(dplyr)
 
 # Define files to be imported and filter on datetime
@@ -129,6 +130,33 @@ corrplot(N, method = 'pie')
 
 ```
 
+```{r}
+# importing matplotlib for diurnal plots
+
+# IF you get a ModuleNotFoundError with any packages from diurnal_plot.py,
+# replace "matplotlib" with that package (e.g. pandas, numpy, etc.)
+py_install(packages = "matplotlib")
+```
+
+```{r}
+# Create timestamp variable for diurnal plots
+joineddata$timestamp <- joineddata$indoor_date_1min
+```
+
+```{python}
+# Create diurnal plot with summary statistics for dataframe of air quality
+# and particulate matter
+import pandas as pd
+import diurnal_plot as dp
+
+df = r.joineddata
+plot = dp.DiurnalPlot("outdoor_pm1")
+dataPM = plot.process_data(df)
+dataPM = dataPM.groupby('time')["outdoor_pm1"]
+dataPM.mean()
+
+# dp.diurnal_plot(r.joineddata, "outdoor_pm1")
+```
 
 ```{r}
 # Calculate indoor/outdoor ratios
@@ -142,7 +170,13 @@ for (colname in names(indoordata)) {
         datatype <- substring(colname, 8, nchar(colname))  # Determines what the data vector is without the "indoor_" label
         # Get indoor and outdoor columns that includes same datatype
         indoor <- joineddata[paste0("indoor_", datatype)]
-        outdoor <- joineddata[paste0("outdoor_", datatype)]
+        # There are some columns in indoordata that do not exist in outdoordata
+        outdoor_idx <- paste0("outdoor_", datatype)
+        if (outdoor_idx %in% names(joineddata)) {
+          outdoor <- joineddata[outdoor_idx]
+        } else {
+          next
+        }
         # If indoor and outdoor columns are both of type double, create ratio col
         if (sapply(indoor, class) == "numeric") {
             ratio_name <- paste0("ratio_", datatype)
@@ -157,15 +191,15 @@ for (colname in names(indoordata)) {
 ```{r}
 # Create a mask for before and after filtration
 
-# joineddata$hepa_installed <- joineddata$date >= hepatime 
+joineddata$hepa_installed <- joineddata$date >= hepatime
 #head(joineddata$hepa_installed)
 #tail(joineddata$hepa_installed)
 
 
 #Create new dataframes for HEPA installed and not installed
 
-hepa_installed <- joineddata[joineddata$date >= hepatime, ]
-no_hepa_installed <- joineddata[joineddata$date < hepatime, ]
+# hepa_installed <- joineddata[joineddata$date >= hepatime, ]
+# no_hepa_installed <- joineddata[joineddata$date < hepatime, ]
 
 
 
@@ -181,45 +215,45 @@ no_hepa_installed <- joineddata[joineddata$date < hepatime, ]
 ```{r}
 # Find statistics for before and after
 
-# NOTE: NONE OF THIS WORKS. NEED SOME NEEL MAGIC
+# Create summary preparation dataframe, which formats joineddata correctly to
+# get summary statistics
+summ_prep <- joineddata[, sapply(joineddata, is.numeric)]
+summ_prep$hepa_installed <- joineddata$hepa_installed
 
-#hepamean <- mean(hepa_installed, na.rm = TRUE)
+# Get rid of second underscores
+for (colname in names(summ_prep)) {
+  # Assume that there can only be 2 underscores max
+  chars <- strsplit(colname, "_")[[1]]
+  if (length(chars) == 3) {
+    # Create new column with simpler name and delete old one
+    summ_prep[paste0(chars[1], "_", chars[2], chars[3])] = summ_prep[colname]
+    summ_prep[colname] <- NULL
+  }
+}
 
+# Summarizes data
+summary <-
+  summ_prep %>%
+    group_by(hepa_installed) %>%
+    summarize(across(starts_with("indoor"),
+                    list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                          twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                          seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                          nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                          mean = ~ mean(.x, na.rm = TRUE),
+                          median = ~ median(.x, na.rm = TRUE)
+                          )
+                    )
+              ) %>%
+    pivot_longer(
+      names_to = c(NA, "bin", ".value"),
+      names_sep = "_",
+      cols = -c(hepa_installed)
+    )
 
- fifth_hepa <- apply(hepa_installed, 2, median, na.rm = TRUE)
- fifth_nohepa <- apply(no_hepa_installed, 2, median, na.rm = TRUE)
-
-
-
-
-# joineddata %>%
-#   group_by(joineddata$hepa_installed) %>%
-#   summarise(fifth = quantile(indoor_bin0, probs = 0.05))
-
-
-
-# fifth <-  quantile(hepa_installed, .05, na.rm = TRUE)
-# twentyfifth <- quantile(hepa_installed, .25, na.rm = TRUE)
-
-
-# summary <-
-#   joineddata %>%
-#     group_by(hepa_installed) %>%
-#     summarize(across(starts_with("indoor"),
-#                     list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
-#                           twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
-#                           seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
-#                           nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
-#                           mean = ~ mean(.x, na.rm = TRUE),
-#                           median = ~ median(.x, na.rm = TRUE)
-#                           )
-#                     )
-#               ) %>%
-#     pivot_longer(
-#       names_to = c(NA, "bin1", "bin2", ".value"),
-#       names_sep = "_",
-#       cols = -c(hepa_installed)
-#     )
+# For sake of memory, delete summ_prep
+summ_prep <- NULL
+summary
 ```
 
 
