@@ -114,19 +114,19 @@ timeVariation(joineddata, pollutant = c("outdoor_pm1", "outdoor_pm25"))
 
 ```{r}
 # Correlation plots for variables
-pdf(file = "figures/corplot.pdf",   # The directory you want to save the file in
-    width = 8, # The width of the plot in inches
-    height = 10) # The height of the plot in inches
-
-
-cordata <- data.frame( indoor_temp,  indoor_rh,  indoor_pm1_num,  indoor_opcn3_pm1,  indoor_opcn3_pm25,  indoor_opcn3_pm10,  indoor_pm1_env,  indoor_pm25_env,  indoor_pm10_env,  indoor_neph_bin0,  indoor_no,  indoor_co,  indoor_no2,  indoor_pm25,  indoor_pm10, outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) # indoor_o3
-
-#outdoorcordata <- data.frame( outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) #joineddata$outdoor_o3
-
-#cordata <- cbind(indoorcordata, outdoorcordata)
-
-N <- cor(na.omit(cordata))
-corrplot(N, method = 'pie')
+# pdf(file = "figures/corplot.pdf",   # The directory you want to save the file in
+#     width = 8, # The width of the plot in inches
+#     height = 10) # The height of the plot in inches
+# 
+# 
+# cordata <- data.frame( indoor_temp,  indoor_rh,  indoor_pm1_num,  indoor_opcn3_pm1,  indoor_opcn3_pm25,  indoor_opcn3_pm10,  indoor_pm1_env,  indoor_pm25_env,  indoor_pm10_env,  indoor_neph_bin0,  indoor_no,  indoor_co,  indoor_no2,  indoor_pm25,  indoor_pm10, outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) # indoor_o3
+# 
+# #outdoorcordata <- data.frame( outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) #joineddata$outdoor_o3
+# 
+# #cordata <- cbind(indoorcordata, outdoorcordata)
+# 
+# N <- cor(na.omit(cordata))
+# corrplot(N, method = 'pie')
 
 ```
 
@@ -146,16 +146,14 @@ joineddata$timestamp <- joineddata$indoor_date_1min
 ```{python}
 # Create diurnal plot with summary statistics for dataframe of air quality
 # and particulate matter
-import pandas as pd
+import matplotlib.pyplot as plt
 import diurnal_plot as dp
 
-df = r.joineddata
-plot = dp.DiurnalPlot("outdoor_pm1")
-dataPM = plot.process_data(df)
-dataPM = dataPM.groupby('time')["outdoor_pm1"]
-dataPM.mean()
+dp.diurnal_plot(r.joineddata, "outdoor_pm1")
+plt.show()
 
-# dp.diurnal_plot(r.joineddata, "outdoor_pm1")
+dp.diurnal_plot(r.joineddata, "indoor_bin0")
+plt.show()
 ```
 
 ```{r}

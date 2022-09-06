@@ -13,7 +13,6 @@ import numpy as np
 from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-import traceback
 
 # Subscripts (for captions and labels)
 SUB = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
@@ -28,13 +27,11 @@ def diurnal_plot(dataPM, pm, weekday=None):
              for weekday or weekend. Set True for weekday and
              False for weekend. If None, do it for all days.
     """
-    try:
-        # Create diurnal plot object
-        dp = DiurnalPlot(pm)
-        dataPM = dp.process_data(dataPM)
-        dp.show(dataPM, weekday)
-    except Exception as e:
-        traceback.print_tb(e.__traceback__)
+    # Create diurnal plot object
+    dp = DiurnalPlot(pm)
+    dataPM = dp.process_data(dataPM)
+    # create and display figure
+    dp.show(dataPM, weekday)
 
 class DiurnalPlot(object):
     """
