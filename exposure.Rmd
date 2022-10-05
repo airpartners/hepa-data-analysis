@@ -111,23 +111,32 @@ df_hepa_stats_bin0 <-
   df_hepa_stats %>%
   filter(location == "indoor", sensor == "opc", bin == "bin0")
 
-df_sensor_sn %>%
-  filter(hepa_installed == FALSE) %>%
-  ggplot(aes(timestamp, indoor_opc_bin0)) +
-  geom_line(color = "blue") +
-  geom_hline(yintercept = df_hepa_stats_bin0$fifth[1], linetype = "dashed", color = "red") + 
-  geom_hline(yintercept = df_hepa_stats_bin0$twentyfifth[1], linetype = "dashed", color = "green") +
-  geom_hline(yintercept = df_hepa_stats_bin0$median[1], linetype = "dashed", color = "black") + 
-  geom_hline(yintercept = df_hepa_stats_bin0$seventyfifth[1], linetype = "dashed", color = "orange")
+before <-
+  df_sensor_sn %>%
+    filter(hepa_installed == FALSE) %>%
+    ggplot(aes(timestamp, indoor_opc_bin0)) +
+    geom_line(color = "blue", alpha = 0.2) +
+    scale_y_log10(limits = c(1, 50)) +
+    geom_hline(yintercept = df_hepa_stats_bin0$fifth[1], linetype = "dashed", color = "red") + 
+    geom_hline(yintercept = df_hepa_stats_bin0$twentyfifth[1], linetype = "dashed", color = "darkgreen") +
+    geom_hline(yintercept = df_hepa_stats_bin0$median[1], linetype = "dashed", color = "black") + 
+    geom_hline(yintercept = df_hepa_stats_bin0$seventyfifth[1], linetype = "dashed", color = "orange")
 
-df_sensor_sn %>%
-  filter(hepa_installed == TRUE) %>%
-  ggplot(aes(timestamp, indoor_opc_bin0)) +
-  geom_line(color = "blue") +
-  geom_hline(yintercept = df_hepa_stats_bin0$fifth[2], linetype = "dashed", color = "red") + 
-  geom_hline(yintercept = df_hepa_stats_bin0$twentyfifth[2], linetype = "dashed", color = "green") +
-  geom_hline(yintercept = df_hepa_stats_bin0$median[2], linetype = "dashed", color = "black") + 
-  geom_hline(yintercept = df_hepa_stats_bin0$seventyfifth[2], linetype = "dashed", color = "orange")
+after <-  
+  df_sensor_sn %>%
+    filter(hepa_installed == TRUE) %>%
+    ggplot(aes(timestamp, indoor_opc_bin0)) +
+    geom_line(color = "blue", alpha = 0.2) +
+    scale_y_log10(limits = c(1, 50)) +
+    theme(axis.text.y = element_blank(), 
+            axis.ticks.y = element_blank(), 
+            axis.title.y = element_blank(),
+            plot.background = element_blank()) +
+    geom_hline(yintercept = df_hepa_stats_bin0$fifth[2], linetype = "dashed", color = "red") + 
+    geom_hline(yintercept = df_hepa_stats_bin0$twentyfifth[2], linetype = "dashed", color = "darkgreen") +
+    geom_hline(yintercept = df_hepa_stats_bin0$median[2], linetype = "dashed", color = "black") + 
+    geom_hline(yintercept = df_hepa_stats_bin0$seventyfifth[2], linetype = "dashed", color = "orange")
+plot_grid(before, after)
 ```
 25th percentile seems like best metric for baseline concentration, therefore the
 reduction of baseline concentration can be found by comparing the 25th percentile
@@ -147,6 +156,7 @@ df_baseline_reduction
 ```{r}
 # 
 df_baseline_reduction["binint"] <- as.integer(sub(".*?(\\d+)", "\\1", df_baseline_reduction$bin))
+df_baseline_reduction
 
 df_baseline_reduction %>%
   filter(location == "indoor", sensor == "opc") %>%
@@ -188,17 +198,13 @@ pm_baseline_reduction <-
   group_by(location, sensor, bin) %>%
   summarise(baseline_reduction = (median[1] - median[2]))
 
-pm_baseline_reduction["binint"] <- as.double(sub(".*?(\\d+)", "\\1", pm_baseline_reduction$bin))
-
-pm_baseline_reduction[, "binint"][pm_baseline_reduction[, "binint"] == 25.0] <- 2.5
-
 pm_baseline_reduction %>%
   filter(location == "indoor", sensor == "opc") %>%
-  ggplot(aes(binint, baseline_reduction, label = baseline_reduction)) +
-  geom_point()+
-  geom_text(hjust = 0, vjust = -.5) +
+  ggplot(aes(x = reorder(bin, +baseline_reduction), y = baseline_reduction)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  # geom_text(hjust = 0, vjust = -.5) +
   ggtitle("Particle reduction by size") +
-  xlab("Bin Number")
+  xlab("PM Type")
 ```
 
 ```{r}

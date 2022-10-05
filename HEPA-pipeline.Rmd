@@ -138,6 +138,7 @@ air_time_series(df_sensor_sn, "opc_pm10",
                 end_dates = uninstalled_dates)
 ```
 
+## Peak Analysis
 
 ```{r}
 
@@ -219,13 +220,6 @@ decay_sum <-
       peak_wdh_mean = mean(peak_width, na.rm = TRUE)
     )
 decay_sum
-```
-
-## Performing Pipeline on Multiple Datasets
-```{r}
-# Get list of all files
-dirs <- list.dirs("hepa-pckls/indoor-outdoor-pairs", recursive = FALSE)
-files <- list.files(dirs, full.names = TRUE)
 ```
 
 ## Heatmap
@@ -397,4 +391,44 @@ df_outdoor_bins %>%
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank())
+```
+
+## Exposure Analysis
+
+```{r}
+df_pm_stats <-
+  df_sensor_sn %>%  
+  group_by(hepa_installed) %>%
+  summarize(across(contains("pm"),
+                   list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                        twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                        seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                        nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                        mean = ~ mean(.x, na.rm = TRUE),
+                        median = ~ median(.x, na.rm = TRUE)
+                        )
+                   )
+            ) %>%
+  pivot_longer(
+    names_to = c("location", "sensor", "bin", ".value"),
+    names_sep = "_",
+    cols = -c(hepa_installed)
+  ) %>%
+  filter(location != "outdoor")
+
+#df_pm_stats
+
+pm_baseline_reduction <-
+  df_pm_stats %>%
+  group_by(location, sensor, bin) %>%
+  summarise(baseline_reduction = (median[1] - median[2]))
+
+pm_baseline_reduction %>%
+  filter(location == "indoor", sensor == "opc") %>%
+  ggplot(aes(x = reorder(bin, +baseline_reduction), y = baseline_reduction)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  # geom_text(hjust = 0, vjust = -.5) +
+  ggtitle("Particle reduction by size") +
+  xlab("PM Type") +
+  ylab("Particulate matter reduction")
 ```
