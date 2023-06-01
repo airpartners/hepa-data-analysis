@@ -1,0 +1,622 @@
+---
+title: "HAFTRAP_R_Notebook"
+output: html_notebook
+author: Scott Hersey, drawing from Neel Dhulipala's HEPA-data-analysis code in places.
+---
+
+```{r setup, include=FALSE, echo=TRUE}
+library(reticulate)
+use_python("/usr/local/bin/python")
+```
+
+```{r}
+library(openair)
+library(corrplot)
+library(ggplot2)
+library(reshape2)
+library(purrr)
+library(tidyr)
+library(lubridate)
+library(reticulate)
+library(dplyr)
+library(ggpmisc)
+# library(olsrr)  # use this to do stepwise linear regression, but need to fix install and dependencies.
+
+# Define files to be imported and filter on datetime
+indoorfile <- 'data/D1_Indoor.txt'
+outdoorfile <- 'data/D1_Outdoor.txt'
+
+#timefile <- 'data/TimeWaves.txt'
+
+hepatime <- "2022-02-07 10:00:00" # Make sure this is in the right time zone
+
+# Define the hour that needs to be excluded from the dataset to account for DST shift (throws errors in the diurnal plot creation)
+dst_start <- "2022-03-13 02:00:00"
+dst_finish <- "2022-03-13 03:00:00"
+  
+# HEPA Times
+# Deployment 1: datetime(2022,02,07,10,00,00) - NO HEPA to HEPA
+# Deployment 2: datetime(2022,02,16,10,00,00) - HEPA to NO HEPA
+# Deployment 3: datetime(2022,03,20,08,00,00) - NO HEPA to HEPA
+# Deployment 4: datetime(2022,04,08,09,00,00) - NO HEPA to HEPA
+```
+
+
+```{r}
+# Import and prepare data
+
+# Import indoor data
+indoordata <- read.delim(indoorfile, header = TRUE, sep = "\t")
+indoordata$date <- as.POSIXct(strptime(indoordata$acsm_local_time, format = "%m/%d/%Y %H:%M:%S", tz = "America/New_York"))
+indoordata$pm1_num <- indoordata$MOD_bin0_in + indoordata$MOD_bin1_in + indoordata$MOD_bin2_in  # Create a PM1 number concentration variable
+#indoordata$date_1min <- round_date(date, unit = "1 min") # create date1min vector for doing time sync if indoor data file and outdoor data file have the same time resolution but different time stamps. Turns 00:00:01 and 00:00:59 into 00:00 and 00:01, respectively. Skip if time stamps are already synced.
+
+# Import outdoor data
+outdoordata <- read.delim(outdoorfile, header = TRUE, sep = "\t")
+outdoordata$date <- as.POSIXct(strptime(outdoordata$acsm_local_time, format = "%m/%d/%Y %H:%M:%S", tz = "America/New_York"))
+outdoordata$pm1_num <- outdoordata$MOD_bin0_out + outdoordata$MOD_bin1_out + outdoordata$MOD_bin2_out # Create a PM1 number concentration variable
+#outdoordata$date_1min <- round_date(date, unit = "1 min") # create date1min vector for doing time sync if indoor data file and outdoor data file have the same time resolution but different time stamps. Turns 00:00:01 and 00:00:59 into 00:00 and 00:01, respectively. Skip if time stamps are already synced.
+
+# Set 0 values in outdoor data to NaN to prevent errors in creating ratios later on
+# outdoordata[outdoordata == 0] <- NA
+```
+
+```{r}
+# Remove offending DST points if the time period includes a DST shift. If not, skip this.
+
+beforedst <-  indoordata[indoordata$date < dst_start, ]
+afterdst <- indoordata[indoordata$date > dst_finish, ]
+indoordata <- rbind(beforedst, afterdst)
+
+beforedst <-  outdoordata[outdoordata$date < dst_start, ]
+afterdst <- outdoordata[outdoordata$date > dst_finish, ]
+outdoordata <- rbind(beforedst, afterdst)
+
+```
+
+
+```{r}
+# Remove duplicate rows based on date
+indoordata %>% distinct(indoordata$date, .keep_all = TRUE)
+outdoordata %>% distinct(outdoordata$date, .keep_all = TRUE)
+
+```
+
+
+```{r}
+# # Eliminate columns that indoor and outdoor dataframes don't have in common - FOR TIME SYNC?
+# 
+# # extract column names of the data frames
+# cols_indoor <- names(indoordata)
+# cols_outdoor <- names(outdoordata)
+# 
+# # find the intersection and difference of both column name vectors
+# cols_intersection <- intersect(cols_indoor, cols_outdoor)
+# cols_diff <- setdiff(cols_indoor, cols_outdoor)
+# 
+# # subset the initial data frames
+# indoordata <- indoordata[,cols_intersection]
+# outdoordata <- outdoordata[,cols_intersection]
+```
+
+```{r}
+# strip "_in" from indoor variable names, "_out" from outdoor variable names
+
+colnames(indoordata)<-gsub("_in","",colnames(indoordata))
+colnames(outdoordata)<-gsub("_out","",colnames(outdoordata))
+
+```
+
+
+```{r}
+# Label all variables by "outdoor_" or "indoor_"
+colnames(outdoordata) <- paste0('outdoor_', colnames(outdoordata)) # add "outdoor_" label to all headers
+colnames(indoordata) <- paste0('indoor_', colnames(indoordata)) # add "indoor_" label to all headers
+```
+
+
+```{r}
+# Time sync indoor and outdoor data
+joineddata <- left_join(indoordata, outdoordata, by = c("indoor_date" = "outdoor_date"))
+joineddata$date <- joineddata$indoor_date #add back in a "date" column for openair functions
+joineddata %>% distinct(joineddata$indoor_date, .keep_all = TRUE)
+
+
+# Attach joineddata to make calling variables easier
+attach(joineddata)
+```
+
+
+
+```{r}
+#Initial time series
+class(date)
+timePlot(joineddata, pollutant = c("indoor_pm1_num", 'indoor_Org', 'indoor_T300_CO'), normalize = TRUE)
+timePlot(joineddata, pollutant = c("outdoor_pm1_num", 'outdoor_Org', 'outdoor_T300_CO'), normalize = TRUE)
+
+#class(date)
+#timePlot(joineddata, pollutant = "indoor_bin0")
+
+```
+
+
+```{r}
+# Create some initial diurnal plots. To be replaced by static report code for mean/median/percentile plots.
+#date <- indoordata$indoor_date
+timeVariation(joineddata, pollutant = c("indoor_T300_CO", "indoor_T200U_NOx")) 
+timeVariation(joineddata, pollutant = c("indoor_Org", "indoor_SO4"))
+timeVariation(joineddata, pollutant = "indoor_Temp_Stove")
+
+timeVariation(joineddata, pollutant = c("outdoor_T300_CO", "outdoor_T200U_NOx")) 
+timeVariation(joineddata, pollutant = c("outdoor_Org", "outdoor_SO4"))
+timeVariation(joineddata, pollutant = "indoor_MOD_PM1")
+```
+
+
+```{r}
+# Indoor correlation plots for variables
+  pdf(file = "figures/D1_indoor_corplot.pdf",   # The directory you want to save the file in
+     width = 16, # The width of the plot in inches
+     height = 16) # The height of the plot in inches
+# 
+# 
+# cordata <- data.frame( indoor_temp,  indoor_rh,  indoor_pm1_num,  indoor_opcn3_pm1,  indoor_opcn3_pm25,  indoor_opcn3_pm10,  indoor_pm1_env,  indoor_pm25_env,  indoor_pm10_env,  indoor_neph_bin0,  indoor_no,  indoor_co,  indoor_no2,  indoor_pm25,  indoor_pm10, outdoor_temp,  outdoor_rh,  outdoor_pm1_num,  outdoor_opcn3_pm1,  outdoor_opcn3_pm25,  outdoor_opcn3_pm10,  outdoor_pm1_env,  outdoor_pm25_env,  outdoor_pm10_env,  outdoor_neph_bin0,  outdoor_no,  outdoor_co,  outdoor_no2,  outdoor_pm25,  outdoor_pm10) # indoor_o3
+#N <- cor(na.omit(cordata))
+
+#cordata <- data.frame(indoor_Chl_in, indoor_MOD_bin0_in, indoor_Org_in, indoor_pm1_num, indoor_MOD_NO2_in, outdoor_Chl_out, outdoor_MOD_bin0_out, outdoor_Org_out, outdoor_pm1_num, outdoor_MOD_NO2_out)
+
+indoor_cordata <- data.frame(indoor_Chl ,indoor_NH4 , indoor_NO3 , indoor_Ratio_55_57 , indoor_SO4 , indoor_Org , indoor_f43 , indoor_f44 , indoor_f57 , indoor_MCPC_counts , indoor_pm1_num, indoor_MOD_PM1 , indoor_MOD_PM25 , indoor_MOD_PM10 , indoor_MOD_NO2 , indoor_MOD_CO , indoor_MOD_NO , indoor_MOD_NO2 , indoor_T300_CO , indoor_T200U_NOx , indoor_T200U_NO , indoor_T200U_NO2 , indoor_Temp_Stove)
+N <- cor(na.omit(indoor_cordata), use = "p")
+corrplot(N, method = 'number')
+```
+
+
+```{r}
+# Outdoor correlation plots
+
+pdf(file = "figures/D1_outdoor_corplot.pdf",   # The directory you want to save the file in
+     width = 16, # The width of the plot in inches
+     height = 16) # The height of the plot in inches
+ 
+outdoor_cordata <- data.frame(outdoor_Chl ,outdoor_NH4 , outdoor_NO3 , outdoor_Ratio_55_57 , outdoor_SO4 , outdoor_Org , outdoor_f43 , outdoor_f44 , outdoor_f57 , outdoor_MCPC_counts , outdoor_pm1_num, outdoor_MOD_PM1 , outdoor_MOD_PM25 , outdoor_MOD_PM10 , outdoor_MOD_NO2 , outdoor_MOD_CO , outdoor_MOD_NO , outdoor_MOD_NO2 , outdoor_T300_CO , outdoor_T200U_NOx , outdoor_T200U_NO , outdoor_T200U_NO2 )
+M <- cor(na.omit(outdoor_cordata), use = "p")
+corrplot(M, method = 'number')
+
+```
+
+```{r}
+# Create some scatter plots from variables that have promise via correlation plots
+
+# MCPC vs stove temp
+ggplot(joineddata, aes(x = joineddata$indoor_Temp_Stove, y = joineddata$indoor_MCPC_counts)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+
+# CO vs stove temp
+ggplot(joineddata, aes(x = joineddata$indoor_Temp_Stove, y = joineddata$indoor_T300_CO)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+# NO vs stove temp
+ggplot(joineddata, aes(x = joineddata$indoor_Temp_Stove, y = joineddata$indoor_T200U_NOx)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+# CO vs CPC
+ggplot(joineddata, aes(x = joineddata$indoor_MCPC_counts, y = joineddata$indoor_T300_CO)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+# NOx vs CPC
+ggplot(joineddata, aes(x = joineddata$indoor_MCPC_counts, y = joineddata$indoor_T200U_NOx)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+# org vs CPC
+ggplot(joineddata, aes(x = joineddata$indoor_MCPC_counts, y = joineddata$indoor_Org)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+# PM1 vs CPC
+ggplot(joineddata, aes(x = joineddata$indoor_MCPC_counts, y = joineddata$indoor_MOD_PM1)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+# PM1num vs CPC
+ggplot(joineddata, aes(x = joineddata$indoor_MCPC_counts, y = joineddata$indoor_pm1_num)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE)
+
+```
+```{r}
+# stepwise linear regression: identify strongly correlated variables from correlation analysis, and seed a stepwise linear regression to determine the best predictors of variation in a variable of interest
+
+# requires the olsrr package, which needs debugging
+
+
+```
+
+
+```{r}
+# importing matplotlib for diurnal plots
+
+# IF you get a ModuleNotFoundError with any packages from diurnal_plot.py,
+# replace "matplotlib" with that package (e.g. pandas, numpy, etc.)
+py_install(packages = "pandas")
+py_install(packages = "matplotlib")
+```
+
+
+
+```{r}
+# Create separate dataframes for before and after filtration for diurnal plotting
+hepa_installed <- joineddata[joineddata$date <= hepatime, ]
+no_hepa_installed <- joineddata[joineddata$date > hepatime, ]
+
+```
+
+```{r}
+
+# Create timestamp variable that python will use for diurnal plots
+joineddata$indoor_timestamp <- joineddata$date
+hepa_installed$indoor_timestamp <- hepa_installed$date
+no_hepa_installed$indoor_timestamp <- no_hepa_installed$date
+```
+
+```{python}
+# Create diurnal plot with summary statistics for dataframe of air quality
+
+import matplotlib.pyplot as plt
+import diurnal_plot as dp
+from matplotlib.backends.backend_pdf import PdfPages
+
+
+
+plot1 = dp.diurnal_plot(r.joineddata, "outdoor_MCPC_counts")
+plt.show()
+
+plot2 = dp.diurnal_plot(r.joineddata, "indoor_MCPC_counts")
+plt.show()
+
+plot3 = dp.diurnal_plot(r.joineddata, "indoor_Org")
+plt.show()
+
+plot4 = dp.diurnal_plot(r.joineddata, "outdoor_Org")
+plt.show()
+
+plot5 = dp.diurnal_plot(r.joineddata, "indoor_SO4")
+plt.show()
+
+plot6 = dp.diurnal_plot(r.joineddata, "outdoor_SO4")
+plt.show()
+
+plot7 = dp.diurnal_plot(r.joineddata, "indoor_Ratio_55_57")
+plt.show()
+
+plot8 = dp.diurnal_plot(r.joineddata, "outdoor_Ratio_55_57")
+plt.show()
+
+plot9 = dp.diurnal_plot(r.joineddata, "indoor_T300_CO")
+plt.show()
+
+plot10 = dp.diurnal_plot(r.joineddata, "indoor_MOD_CO")
+plt.show()
+
+plot11 = dp.diurnal_plot(r.joineddata, "outdoor_T300_CO")
+plt.show()
+
+plot12 = dp.diurnal_plot(r.joineddata, "outdoor_MOD_CO")
+plt.show()
+
+plot13 = dp.diurnal_plot(r.joineddata, "indoor_T200U_NO")
+plt.show()
+
+plot14 = dp.diurnal_plot(r.joineddata, "indoor_MOD_NO")
+plt.show()
+
+plot15 = dp.diurnal_plot(r.joineddata, "outdoor_T200U_NO")
+plt.show()
+
+plot16 = dp.diurnal_plot(r.joineddata, "outdoor_MOD_NO")
+plt.show()
+
+plot17 = dp.diurnal_plot(r.joineddata, "indoor_MOD_PM1")
+plt.show()
+
+plot18 = dp.diurnal_plot(r.joineddata, "outdoor_MOD_PM1")
+plt.show()
+
+plot19 = dp.diurnal_plot(r.joineddata, "indoor_Temp_Stove")
+plt.show()
+
+
+
+
+def save_multi_image(filename):
+    pp = PdfPages(filename)
+    fig_nums = plt.get_fignums()
+    figs = [plt.figure(n) for n in fig_nums]
+    for fig in figs:
+        fig.savefig(pp, format='pdf')
+    pp.close()
+
+filename = "Diurnals_D1_NEW.pdf"
+save_multi_image(filename)
+
+```
+
+```{python}
+# Create diurnal plot with summary statistics for dataframe of air quality
+# and particulate matter BEFORE FILTRATION
+import matplotlib.pyplot as plt
+import diurnal_plot as dp
+
+
+
+plot1 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_MCPC_counts")
+plt.show()
+
+plot2 = dp.diurnal_plot(r.no_hepa_installed, "indoor_MCPC_counts")
+plt.show()
+
+plot3 = dp.diurnal_plot(r.no_hepa_installed, "indoor_Org")
+plt.show()
+
+plot4 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_Org")
+plt.show()
+
+plot5 = dp.diurnal_plot(r.no_hepa_installed, "indoor_SO4")
+plt.show()
+
+plot6 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_SO4")
+plt.show()
+
+plot7 = dp.diurnal_plot(r.no_hepa_installed, "indoor_Ratio_55_57")
+plt.show()
+
+plot8 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_Ratio_55_57")
+plt.show()
+
+plot9 = dp.diurnal_plot(r.no_hepa_installed, "indoor_T300_CO")
+plt.show()
+
+plot10 = dp.diurnal_plot(r.no_hepa_installed, "indoor_MOD_CO")
+plt.show()
+
+plot11 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_T300_CO")
+plt.show()
+
+plot12 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_MOD_CO")
+plt.show()
+
+plot13 = dp.diurnal_plot(r.no_hepa_installed, "indoor_T200U_NO")
+plt.show()
+
+plot14 = dp.diurnal_plot(r.no_hepa_installed, "indoor_MOD_NO")
+plt.show()
+
+plot15 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_T200U_NO")
+plt.show()
+
+plot16 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_MOD_NO")
+plt.show()
+
+plot17 = dp.diurnal_plot(r.no_hepa_installed, "indoor_MOD_PM1")
+plt.show()
+
+plot18 = dp.diurnal_plot(r.no_hepa_installed, "outdoor_MOD_PM1")
+plt.show()
+
+plot19 = dp.diurnal_plot(r.no_hepa_installed, "indoor_Temp_Stove")
+plt.show()
+
+def save_multi_image(filename):
+    pp = PdfPages(filename)
+    fig_nums = plt.get_fignums()
+    figs = [plt.figure(n) for n in fig_nums]
+    for fig in figs:
+        fig.savefig(pp, format='pdf')
+    pp.close()
+
+filename = "Diurnals_D1_NOHEPA.pdf"
+save_multi_image(filename)
+
+```
+
+```{python}
+# Create diurnal plot with summary statistics for dataframe of air quality
+# and particulate matter AFTER FILTRATION
+import matplotlib.pyplot as plt
+import diurnal_plot as dp
+
+
+
+plot1 = dp.diurnal_plot(r.hepa_installed, "outdoor_MCPC_counts")
+plt.show()
+
+plot2 = dp.diurnal_plot(r.hepa_installed, "indoor_MCPC_counts")
+plt.show()
+
+plot3 = dp.diurnal_plot(r.hepa_installed, "indoor_Org")
+plt.show()
+
+plot4 = dp.diurnal_plot(r.hepa_installed, "outdoor_Org")
+plt.show()
+
+plot5 = dp.diurnal_plot(r.hepa_installed, "indoor_SO4")
+plt.show()
+
+plot6 = dp.diurnal_plot(r.hepa_installed, "outdoor_SO4")
+plt.show()
+
+plot7 = dp.diurnal_plot(r.hepa_installed, "indoor_Ratio_55_57")
+plt.show()
+
+plot8 = dp.diurnal_plot(r.hepa_installed, "outdoor_Ratio_55_57")
+plt.show()
+
+plot9 = dp.diurnal_plot(r.hepa_installed, "indoor_T300_CO")
+plt.show()
+
+plot10 = dp.diurnal_plot(r.hepa_installed, "indoor_MOD_CO")
+plt.show()
+
+plot11 = dp.diurnal_plot(r.hepa_installed, "outdoor_T300_CO")
+plt.show()
+
+plot12 = dp.diurnal_plot(r.hepa_installed, "outdoor_MOD_CO")
+plt.show()
+
+plot13 = dp.diurnal_plot(r.hepa_installed, "indoor_T200U_NO")
+plt.show()
+
+plot14 = dp.diurnal_plot(r.hepa_installed, "indoor_MOD_NO")
+plt.show()
+
+plot15 = dp.diurnal_plot(r.hepa_installed, "outdoor_T200U_NO")
+plt.show()
+
+plot16 = dp.diurnal_plot(r.hepa_installed, "outdoor_MOD_NO")
+plt.show()
+
+plot17 = dp.diurnal_plot(r.hepa_installed, "indoor_MOD_PM1")
+plt.show()
+
+plot18 = dp.diurnal_plot(r.hepa_installed, "outdoor_MOD_PM1")
+plt.show()
+
+plot19 = dp.diurnal_plot(r.hepa_installed, "indoor_Temp_Stove")
+plt.show()
+
+def save_multi_image(filename):
+    pp = PdfPages(filename)
+    fig_nums = plt.get_fignums()
+    figs = [plt.figure(n) for n in fig_nums]
+    for fig in figs:
+        fig.savefig(pp, format='pdf')
+    pp.close()
+
+filename = "Diurnals_D1_HEPA.pdf"
+save_multi_image(filename)
+
+```
+
+
+```{r}
+# Calculate indoor/outdoor ratios
+# NOTE: This works, and cycles through all of the numeric variables. Somehow it gets stuck somewhere at the very end, but it does work. Potential solution is to create new indoor/outdoor dfs based on the indoor/outdoor labels and compare the headers to see if something is there in indoor but not there in outdoor?
+
+
+
+# Go through every column of the dataframe
+for (colname in names(indoordata)) {
+    if (grepl("indoor_", colname, fixed = TRUE)) {
+        datatype <- substring(colname, 8, nchar(colname))  # Determines what the data vector is without the "indoor_" label
+        # Get indoor and outdoor columns that includes same datatype
+        indoor <- joineddata[paste0("indoor_", datatype)]
+        # There are some columns in indoordata that do not exist in outdoordata
+        outdoor_idx <- paste0("outdoor_", datatype)
+        if (outdoor_idx %in% names(joineddata)) {
+          outdoor <- joineddata[outdoor_idx]
+        } else {
+          next
+        }
+        # If indoor and outdoor columns are both of type double, create ratio col
+        if (sapply(indoor, class) == "numeric") {
+            ratio_name <- paste0("ratio_", datatype)
+            joineddata[ratio_name] <- indoor / outdoor
+        }
+    }
+}
+#joineddata["ratio_opc_bin0"]
+```
+
+
+```{r}
+# Create a mask for before and after filtration
+
+joineddata$hepa_installed <- joineddata$date <= hepatime
+
+
+```
+
+
+```{r}
+# Find statistics for before and after
+
+# Create summary preparation dataframe, which formats joineddata correctly to
+# get summary statistics
+summ_prep <- joineddata[, sapply(joineddata, is.numeric)]
+summ_prep$hepa_installed <- joineddata$hepa_installed
+
+# Get rid of second underscores
+for (colname in names(summ_prep)) {
+  # Assume that there can only be 2 underscores max
+  chars <- strsplit(colname, "_")[[1]]
+  if (length(chars) == 3) {
+    # Create new column with simpler name and delete old one
+    summ_prep[paste0(chars[1], "_", chars[2], chars[3])] = summ_prep[colname]
+    summ_prep[colname] <- NULL
+  }
+  else if (length(chars) == 4) {
+    # Create new column with simpler name and delete old one
+    summ_prep[paste0(chars[1], "_", chars[2], chars[3], chars[4])] = summ_prep[colname]
+    summ_prep[colname] <- NULL
+  }
+}
+
+# Summarizes data
+summary <-
+  summ_prep %>%
+    group_by(hepa_installed) %>%
+    summarize(across(starts_with("indoor"),
+                    list(fifth = ~ quantile(.x, .05, na.rm = TRUE),
+                          twentyfifth = ~ quantile(.x, .25, na.rm = TRUE),
+                          seventyfifth = ~ quantile(.x, .75, na.rm = TRUE),
+                          nintyfifth = ~ quantile(.x, .95, na.rm = TRUE),
+                          mean = ~ mean(.x, na.rm = TRUE),
+                          median = ~ median(.x, na.rm = TRUE)
+                          )
+                    )
+              ) %>%
+    pivot_longer(
+      names_to = c(NA, "bin", ".value"),
+      names_sep = "_",
+      cols = -c(hepa_installed)
+    )
+
+# Save summary table as a .csv
+write.csv(summary,"D1_Summary.csv", row.names = TRUE)
+
+
+# For sake of memory, delete summ_prep
+summ_prep <- NULL
+summary
+```
+
+
